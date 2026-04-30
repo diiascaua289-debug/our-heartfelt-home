@@ -2101,7 +2101,8 @@ const videoPrev = document.getElementById('videoPrev');
 const videoNext = document.getElementById('videoNext');
 
 if (videoCarousel && videoPrev && videoNext) {
-  const getStep = () => Math.min(videoCarousel.clientWidth * 0.9, 420);
+  const getStep = () => Math.min(videoCarousel.clientWidth * 0.9, 360);
+  let autoScrollTimer;
 
   videoPrev.addEventListener('click', () => {
     videoCarousel.scrollBy({ left: -getStep(), behavior: 'smooth' });
@@ -2111,30 +2112,26 @@ if (videoCarousel && videoPrev && videoNext) {
     videoCarousel.scrollBy({ left: getStep(), behavior: 'smooth' });
   });
 
-  videoCarousel.querySelectorAll('.video-slide').forEach((slide) => {
-    const video = slide.querySelector('.video-player');
-    const playBtn = slide.querySelector('.video-play-btn');
-    const volume = slide.querySelector('.video-volume');
+  const startAutoScroll = () => {
+    autoScrollTimer = setInterval(() => {
+      const maxScroll = videoCarousel.scrollWidth - videoCarousel.clientWidth;
+      const nextLeft = videoCarousel.scrollLeft + getStep();
 
-    if (!video || !playBtn || !volume) return;
-
-    playBtn.addEventListener('click', () => {
-      if (video.paused) {
-        video.play();
-        playBtn.textContent = 'Pause';
+      if (nextLeft >= maxScroll - 4) {
+        videoCarousel.scrollTo({ left: 0, behavior: 'smooth' });
       } else {
-        video.pause();
-        playBtn.textContent = 'Play';
+        videoCarousel.scrollBy({ left: getStep(), behavior: 'smooth' });
       }
-    });
+    }, 3500);
+  };
 
-    volume.addEventListener('input', (e) => {
-      video.volume = Number(e.target.value);
-    });
+  const stopAutoScroll = () => {
+    if (autoScrollTimer) clearInterval(autoScrollTimer);
+  };
 
-    video.addEventListener('play', () => { playBtn.textContent = 'Pause'; });
-    video.addEventListener('pause', () => { playBtn.textContent = 'Play'; });
-  });
+  videoCarousel.addEventListener('mouseenter', stopAutoScroll);
+  videoCarousel.addEventListener('mouseleave', startAutoScroll);
+  startAutoScroll();
 }
 
 // Language switcher (PT/ES/EN)
