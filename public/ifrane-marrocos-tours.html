@@ -1205,8 +1205,7 @@ footer {
    .hoteis-grid { grid-template-columns: 1fr; }
   .video-carousel-wrap { grid-template-columns: 1fr; }
   .video-nav { display: none; }
-  .video-carousel { grid-auto-columns: 88%; }
-  .video-controls { flex-direction: column; align-items: flex-start; }
+  .video-carousel { grid-auto-columns: 94%; }
   .gallery-masonry { columns: 1; }
   .timeline::before { left: 50px; }
   .tl-day { width: 50px; }
@@ -2104,6 +2103,7 @@ if (videoCarousel && videoPrev && videoNext) {
   });
 
   const startAutoScroll = () => {
+    stopAutoScroll();
     autoScrollTimer = setInterval(() => {
       const maxScroll = videoCarousel.scrollWidth - videoCarousel.clientWidth;
       const nextLeft = videoCarousel.scrollLeft + getStep();
