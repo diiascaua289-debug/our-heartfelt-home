@@ -916,8 +916,8 @@ section { overflow: hidden; }
 .videoteca-header p { color: rgba(255,248,239,0.88) !important; }
 .video-carousel-wrap {
   display: grid;
-  grid-template-columns: 52px 1fr 52px;
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 0;
   align-items: center;
 }
 .video-nav {
@@ -1813,7 +1813,6 @@ i[class*=" fa"] {
 <p style="font-size:16px; margin-top:10px;">Deslize automático com pausa no hover. Cada vídeo tem controles de play/pause, volume e tela cheia.</p>
 </div>
 <div class="video-carousel-wrap reveal">
-<button aria-label="Vídeo anterior" class="video-nav" id="videoPrev" type="button">&#10094;</button>
 <div class="video-carousel" id="videoCarousel">
 <div class="video-slide">
 <video class="video-player" controls preload="metadata" playsinline>
@@ -1831,7 +1830,6 @@ i[class*=" fa"] {
 </video>
 </div>
 </div>
-<button aria-label="Próximo vídeo" class="video-nav" id="videoNext" type="button">&#10095;</button>
 </div>
 </div>
 </section>
