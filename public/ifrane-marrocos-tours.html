@@ -935,7 +935,7 @@ section { overflow: hidden; }
 .video-carousel {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 26%);
+  grid-auto-columns: minmax(320px, 34%);
   gap: 20px;
   overflow-x: auto;
   scroll-behavior: smooth;
@@ -955,13 +955,7 @@ section { overflow: hidden; }
   aspect-ratio: 9 / 16;
   border-radius: 0;
   background: #0f172a;
-  object-fit: cover;
-}
-.video-meta h3 {
-  margin: 14px 14px 16px;
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 28px;
-  color: var(--white);
+  object-fit: contain;
 }
 
 /* ── FAQ ── */
@@ -1211,8 +1205,7 @@ footer {
    .hoteis-grid { grid-template-columns: 1fr; }
   .video-carousel-wrap { grid-template-columns: 1fr; }
   .video-nav { display: none; }
-  .video-carousel { grid-auto-columns: 88%; }
-  .video-controls { flex-direction: column; align-items: flex-start; }
+  .video-carousel { grid-auto-columns: 94%; }
   .gallery-masonry { columns: 1; }
   .timeline::before { left: 50px; }
   .tl-day { width: 50px; }
@@ -1826,19 +1819,16 @@ i[class*=" fa"] {
 <video class="video-player" controls preload="metadata" playsinline>
 <source src="/videos/videoteca-deserto.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Deserto do Saara</h3></div>
 </div>
 <div class="video-slide">
 <video class="video-player" controls preload="metadata" playsinline>
 <source src="/videos/videoteca-canion.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Cânions e Montanhas</h3></div>
 </div>
 <div class="video-slide">
 <video class="video-player" controls preload="metadata" playsinline>
 <source src="/videos/videoteca-riad.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Arquitetura Marroquina</h3></div>
 </div>
 </div>
 <button aria-label="Próximo vídeo" class="video-nav" id="videoNext" type="button">&#10095;</button>
@@ -2101,7 +2091,7 @@ const videoPrev = document.getElementById('videoPrev');
 const videoNext = document.getElementById('videoNext');
 
 if (videoCarousel && videoPrev && videoNext) {
-  const getStep = () => Math.min(videoCarousel.clientWidth * 0.9, 360);
+  const getStep = () => Math.min(videoCarousel.clientWidth * 0.9, 440);
   let autoScrollTimer;
 
   videoPrev.addEventListener('click', () => {
@@ -2113,6 +2103,7 @@ if (videoCarousel && videoPrev && videoNext) {
   });
 
   const startAutoScroll = () => {
+    stopAutoScroll();
     autoScrollTimer = setInterval(() => {
       const maxScroll = videoCarousel.scrollWidth - videoCarousel.clientWidth;
       const nextLeft = videoCarousel.scrollLeft + getStep();
