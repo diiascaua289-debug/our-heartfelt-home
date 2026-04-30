@@ -935,7 +935,7 @@ section { overflow: hidden; }
 .video-carousel {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 26%);
+  grid-auto-columns: minmax(320px, 34%);
   gap: 20px;
   overflow-x: auto;
   scroll-behavior: smooth;
@@ -955,13 +955,7 @@ section { overflow: hidden; }
   aspect-ratio: 9 / 16;
   border-radius: 0;
   background: #0f172a;
-  object-fit: cover;
-}
-.video-meta h3 {
-  margin: 14px 14px 16px;
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 28px;
-  color: var(--white);
+  object-fit: contain;
 }
 
 /* ── FAQ ── */
