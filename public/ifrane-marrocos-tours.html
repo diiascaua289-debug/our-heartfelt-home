@@ -908,9 +908,12 @@ section { overflow: hidden; }
 /* ── VIDEOTECA ── */
 #videoteca {
   padding: 120px 0;
-  background: var(--white);
+  background: radial-gradient(1200px 520px at 50% 100%, #133f72 0%, #0b1f3a 45%, #08162b 100%);
 }
 .videoteca-header { text-align: center; margin-bottom: 48px; }
+.videoteca-header .section-label { color: var(--orange); }
+.videoteca-header .section-title { color: var(--white); }
+.videoteca-header p { color: rgba(255,248,239,0.88) !important; }
 .video-carousel-wrap {
   display: grid;
   grid-template-columns: 52px 1fr 52px;
@@ -932,7 +935,7 @@ section { overflow: hidden; }
 .video-carousel {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(280px, 33%);
+  grid-auto-columns: minmax(240px, 26%);
   gap: 20px;
   overflow-x: auto;
   scroll-behavior: smooth;
@@ -940,50 +943,25 @@ section { overflow: hidden; }
   padding: 6px;
 }
 .video-slide {
-  background: white;
-  border-radius: 16px;
-  border: 1px solid #e6e8ee;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.06);
-  padding: 10px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow: 0 18px 34px rgba(2,12,28,0.48);
+  padding: 0;
+  overflow: hidden;
 }
 .video-player {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
+  aspect-ratio: 9 / 16;
+  border-radius: 0;
   background: #0f172a;
+  object-fit: cover;
 }
 .video-meta h3 {
-  margin: 12px 4px 8px;
+  margin: 14px 14px 16px;
   font-family: 'Cormorant Garamond', serif;
-  font-size: 24px;
-  color: var(--dark);
-}
-.video-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px;
-}
-.video-play-btn {
-  border: 1px solid rgba(30,86,160,0.25);
-  background: #fff;
-  color: var(--blue);
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.video-volume-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #4a5568;
-}
-.video-volume {
-  width: 110px;
-  accent-color: var(--blue);
+  font-size: 28px;
+  color: var(--white);
 }
 
 /* ── FAQ ── */
@@ -1440,7 +1418,7 @@ i[class*=" fa"] {
 <!-- HEADER -->
 <header id="header">
 <a class="logo" href="#">
-<img alt="Ifrane Marrocos Tours" decoding="async" fetchpriority="high" loading="eager" src="/ifrane-logo.png?v=20260430a" style="width:96px;max-width:96px;height:auto;"/>
+<img alt="Ifrane Marrocos Tours" decoding="async" fetchpriority="high" loading="eager" src="/ifrane-logo.png?v=20260430a" style="width:140px;max-width:140px;height:auto;"/>
 <div class="logo-tagline">Agência de Turismo Premium</div>
 </a>
 <nav id="mainNav">
@@ -1837,46 +1815,34 @@ i[class*=" fa"] {
 <section id="videoteca">
 <div class="container">
 <div class="videoteca-header reveal">
-<div class="section-label">Vídeos</div>
-<h2 class="section-title">Videoteca</h2>
+<div class="section-label">VIDEOTECA</div>
+<h2 class="section-title">Veja o Marrocos em movimento</h2>
+<p style="font-size:16px; margin-top:10px;">Deslize automático com pausa no hover. Cada vídeo tem controles de play/pause, volume e tela cheia.</p>
 </div>
 <div class="video-carousel-wrap reveal">
 <button aria-label="Vídeo anterior" class="video-nav" id="videoPrev" type="button">&#10094;</button>
 <div class="video-carousel" id="videoCarousel">
 <div class="video-slide">
-<video class="video-player" controls preload="none" poster="/imagens/curiosidade-08.jpg">
-<source src="" type="video/mp4"/>
+<video class="video-player" controls preload="metadata" playsinline>
+<source src="/videos/videoteca-deserto.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Tour Completo</h3></div>
-<div class="video-controls">
-<button class="video-play-btn" type="button">Play</button>
-<label class="video-volume-wrap">Volume <input class="video-volume" max="1" min="0" step="0.1" type="range" value="1"/></label>
-</div>
+<div class="video-meta"><h3>Deserto do Saara</h3></div>
 </div>
 <div class="video-slide">
-<video class="video-player" controls preload="none" poster="/imagens/curiosidade-10.jpg">
-<source src="" type="video/mp4"/>
+<video class="video-player" controls preload="metadata" playsinline>
+<source src="/videos/videoteca-canion.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Deserto e Riad</h3></div>
-<div class="video-controls">
-<button class="video-play-btn" type="button">Play</button>
-<label class="video-volume-wrap">Volume <input class="video-volume" max="1" min="0" step="0.1" type="range" value="1"/></label>
-</div>
+<div class="video-meta"><h3>Cânions e Montanhas</h3></div>
 </div>
 <div class="video-slide">
-<video class="video-player" controls preload="none" poster="/imagens/missao-clara.jpg">
-<source src="" type="video/mp4"/>
+<video class="video-player" controls preload="metadata" playsinline>
+<source src="/videos/videoteca-riad.mp4" type="video/mp4"/>
 </video>
-<div class="video-meta"><h3>Cidades Imperiais</h3></div>
-<div class="video-controls">
-<button class="video-play-btn" type="button">Play</button>
-<label class="video-volume-wrap">Volume <input class="video-volume" max="1" min="0" step="0.1" type="range" value="1"/></label>
-</div>
+<div class="video-meta"><h3>Arquitetura Marroquina</h3></div>
 </div>
 </div>
 <button aria-label="Próximo vídeo" class="video-nav" id="videoNext" type="button">&#10095;</button>
 </div>
-<p style="text-align:center; margin-top:16px; color:#718096;">Me envie os vídeos e eu conecto cada card com os arquivos finais.</p>
 </div>
 </section>
 <!-- HOTÉIS -->
