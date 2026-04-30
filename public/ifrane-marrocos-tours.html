@@ -2085,20 +2085,10 @@ document.getElementById('accordion').addEventListener('click', (e) => {
 
 // Videoteca carousel + controles
 const videoCarousel = document.getElementById('videoCarousel');
-const videoPrev = document.getElementById('videoPrev');
-const videoNext = document.getElementById('videoNext');
 
-if (videoCarousel && videoPrev && videoNext) {
+if (videoCarousel) {
   const getStep = () => Math.min(videoCarousel.clientWidth * 0.9, 440);
   let autoScrollTimer;
-
-  videoPrev.addEventListener('click', () => {
-    videoCarousel.scrollBy({ left: -getStep(), behavior: 'smooth' });
-  });
-
-  videoNext.addEventListener('click', () => {
-    videoCarousel.scrollBy({ left: getStep(), behavior: 'smooth' });
-  });
 
   const startAutoScroll = () => {
     stopAutoScroll();
