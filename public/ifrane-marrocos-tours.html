@@ -1993,10 +1993,61 @@ i[class*=" fa"] {
 </div>
 <div class="footer-bottom">
 <span>© 2026 Ifrane Marrocos Tours. Todos os direitos reservados.</span>
-<span>Feito com <i aria-hidden="true" class="fa-solid fa-heart"></i> para viajantes brasileiros</span>
+<span>Feito com <i aria-hidden="true" class="fa-solid fa-heart"></i> para viajantes brasileiros · <a href="/painel" style="color:rgba(255,248,239,0.45); text-decoration:none;">PAINEL</a></span>
 </div>
 </div>
 </footer>
+<script>
+(function(){
+  const isPreview = new URLSearchParams(window.location.search).has('admin_preview');
+  if (isPreview || window.location.pathname.startsWith('/painel')) return;
+  const supabaseUrl = 'https://nybuomuvxpppxvpanjlt.supabase.co';
+  const publishableKey = 'sb_publishable_7a39yL1brl5l9wxpqVFv-Q_2Sthv8ow';
+  const visitorKey = 'ohh_visitor_id';
+  const sessionKey = 'ohh_session';
+  const now = Date.now();
+  const visitorId = localStorage.getItem(visitorKey) || crypto.randomUUID();
+  localStorage.setItem(visitorKey, visitorId);
+  const previousSession = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
+  const session = previousSession && now - previousSession.lastSeen < 30 * 60 * 1000
+    ? { ...previousSession, lastSeen: now }
+    : { id: crypto.randomUUID(), startedAt: now, lastSeen: now };
+  sessionStorage.setItem(sessionKey, JSON.stringify(session));
+  const params = new URLSearchParams(window.location.search);
+  const device = window.innerWidth < 768 ? 'Mobile' : window.innerWidth < 1024 ? 'Tablet' : 'Desktop';
+  function track(eventName, metadata){
+    fetch(`${supabaseUrl}/rest/v1/analytics_events`, {
+      method: 'POST',
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${publishableKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({
+        event_name: eventName,
+        page_path: window.location.pathname,
+        visitor_id: visitorId,
+        session_id: session.id,
+        device,
+        referrer: document.referrer || null,
+        landing_page: window.location.href,
+        utm_source: params.get('utm_source'),
+        utm_medium: params.get('utm_medium'),
+        utm_campaign: params.get('utm_campaign'),
+        utm_content: params.get('utm_content'),
+        utm_term: params.get('utm_term'),
+        metadata: metadata || {}
+      })
+    }).catch(function(){});
+  }
+  track('PageView');
+  document.addEventListener('click', function(event){
+    const link = event.target.closest && event.target.closest('a[href*=\"wa.me\"], a[href*=\"whatsapp\"]');
+    if (link) track('WhatsAppClick', { href: link.href, text: link.textContent.trim().slice(0, 120) });
+  });
+})();
+</script>
 <script>
 // Header scroll effect
 const header = document.getElementById('header');
