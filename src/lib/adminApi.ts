@@ -72,6 +72,23 @@ export async function adminTable<T>(table: AdminTable, options: RequestOptions =
   return request(`/table/${table}`, options) as Promise<T>;
 }
 
+export async function uploadAdminMedia<T>(mediaId: string, file: File, token: string) {
+  const response = await fetch(`${ADMIN_API_URL}/media-upload/${encodeURIComponent(mediaId)}?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: {
+      "x-admin-token": token,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || "Não foi possível enviar o arquivo.");
+  }
+  return payload as T;
+}
+
 export async function adminRpc<T>(name: "admin_change_password" | "admin_save_recovery_email", token: string, body: unknown) {
   return request(`/rpc/${name}`, {
     method: "POST",

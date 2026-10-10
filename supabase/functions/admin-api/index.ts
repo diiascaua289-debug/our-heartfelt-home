@@ -108,6 +108,60 @@ Deno.serve(async (req) => {
     return json(await res.json(), res.status);
   }
 
+  if (resource === "media-upload" && req.method === "POST") {
+    const mediaId = name;
+    const contentType = (req.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    const fileName = url.searchParams.get("filename") || "arquivo";
+    const allowedTypes = new Set([
+      "image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml",
+      "video/mp4", "video/webm",
+    ]);
+
+    if (!mediaId || !allowedTypes.has(contentType)) return json({ error: "Tipo de arquivo não permitido." }, 400);
+    if (!req.body || contentLength <= 0) return json({ error: "Arquivo vazio." }, 400);
+    if (contentLength > 50 * 1024 * 1024) return json({ error: "O arquivo deve ter no máximo 50 MB." }, 413);
+
+    const mediaRes = await supabaseFetch(`/rest/v1/media?id=eq.${encodeURIComponent(mediaId)}&select=*`);
+    if (!mediaRes.ok) return json({ error: "Não foi possível localizar a mídia." }, mediaRes.status);
+    const mediaRows = await mediaRes.json();
+    const media = mediaRows[0];
+    if (!media) return json({ error: "Mídia não encontrada." }, 404);
+
+    const expectsVideo = media.media_type === "video";
+    if ((expectsVideo && !contentType.startsWith("video/")) || (!expectsVideo && !contentType.startsWith("image/"))) {
+      return json({ error: expectsVideo ? "Escolha um arquivo de vídeo." : "Escolha um arquivo de imagem." }, 400);
+    }
+
+    const extensionByType: Record<string, string> = {
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+      "image/svg+xml": "svg", "video/mp4": "mp4", "video/webm": "webm",
+    };
+    const extension = extensionByType[contentType] || fileName.split(".").pop()?.toLowerCase() || "bin";
+    const bucket = media.bucket || "site-media";
+    const objectPath = `admin/${media.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const encodedObjectPath = objectPath.split("/").map(encodeURIComponent).join("/");
+    const uploadRes = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(bucket)}/${encodedObjectPath}`, {
+      method: "POST",
+      headers: { "Content-Type": contentType, "x-upsert": "false", "cache-control": "3600" },
+      body: req.body,
+    });
+    if (!uploadRes.ok) {
+      const uploadError = await uploadRes.json().catch(() => null);
+      return json({ error: uploadError?.message || uploadError?.error || "Não foi possível enviar o arquivo." }, uploadRes.status);
+    }
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedObjectPath}`;
+    const metadata = { ...(media.metadata || {}), storage_path: objectPath, original_name: fileName, content_type: contentType, size: contentLength };
+    const updateRes = await supabaseFetch(`/rest/v1/media?id=eq.${encodeURIComponent(mediaId)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ public_url: publicUrl, metadata, is_active: true }),
+    });
+    if (!updateRes.ok) return json({ error: "O arquivo foi enviado, mas não foi possível atualizar o site." }, updateRes.status);
+    return json((await updateRes.json())[0]);
+  }
+
   if (resource !== "table" || !adminTables.has(name)) return json({ error: "not_found" }, 404);
 
   const query = url.search || "";

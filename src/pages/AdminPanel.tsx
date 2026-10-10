@@ -3,17 +3,18 @@ import type { ReactNode } from "react";
 import {
   BarChart3, Check, ChevronDown, ExternalLink, FileText, Image, LayoutDashboard,
   Link2, Loader2, LogOut, MessageCircle, Palette, RefreshCw, Save, Search,
-  Settings, Shield, Users,
+  Settings, Shield, Trash2, Upload, Users,
 } from "lucide-react";
 import {
   adminRpc, adminTable, clearAdminToken, getStoredAdminToken, loginAdmin, storeAdminToken,
+  uploadAdminMedia,
 } from "@/lib/adminApi";
 
 type JsonMap = Record<string, unknown>;
 type SectionRow = { id: string; section_key: string; name: string; sort_order: number; is_active: boolean; draft_data: JsonMap };
 type ContentBlockRow = { id: string; section_id: string | null; block_key: string; type: string; label: string | null; sort_order: number; is_active: boolean; draft_content: JsonMap };
 type ButtonRow = { id: string; section_id: string | null; button_key: string; label: string; destination_type: "url" | "anchor" | "whatsapp" | "page" | "email" | "phone"; destination_value: string | null; open_new_tab: boolean; is_active: boolean; sort_order: number };
-type MediaRow = { id: string; path: string; public_url: string | null; media_type: "image" | "video" | "logo" | "favicon" | "og_image" | "file"; label: string | null; alt_text: string | null; caption: string | null; is_active: boolean };
+type MediaRow = { id: string; bucket: string; path: string; public_url: string | null; media_type: "image" | "video" | "logo" | "favicon" | "og_image" | "file"; label: string | null; alt_text: string | null; caption: string | null; is_active: boolean };
 type FormField = { name?: string; label?: string; type?: string; required?: boolean };
 type FormRow = { id: string; name: string; form_key: string; fields: FormField[]; success_message: string; is_active: boolean };
 type Lead = { id: string; name: string | null; whatsapp: string | null; email: string | null; status: string; source: string | null; created_at: string };
@@ -170,6 +171,30 @@ function AdminPanel() {
     }
   }
 
+  async function replaceMedia(item: MediaRow, file: File) {
+    if (!token) return;
+    const expectsVideo = item.media_type === "video";
+    if ((expectsVideo && !file.type.startsWith("video/")) || (!expectsVideo && !file.type.startsWith("image/"))) {
+      setFeedback(expectsVideo ? "Escolha um arquivo de vídeo." : "Escolha um arquivo de imagem.");
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setFeedback("O arquivo deve ter no máximo 50 MB.");
+      return;
+    }
+    await saveAction(`media-upload-${item.id}`, () => uploadAdminMedia<MediaRow>(item.id, file, token), "Mídia trocada no site");
+  }
+
+  async function removeMedia(item: MediaRow) {
+    if (!token || !window.confirm(`Remover ${item.media_type === "video" ? "este vídeo" : "esta imagem"} do site?`)) return;
+    await saveAction(`media-remove-${item.id}`, () => adminTable("media", {
+      method: "PATCH",
+      token,
+      query: `?id=eq.${item.id}`,
+      body: { is_active: false },
+    }), "Mídia removida do site");
+  }
+
   async function saveSecurity(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
@@ -193,9 +218,6 @@ function AdminPanel() {
   }
   function updateButton(id: string, patch: Partial<ButtonRow>) {
     setData((current) => ({ ...current, buttons: current.buttons.map((button) => button.id === id ? { ...button, ...patch } : button) }));
-  }
-  function updateMedia(id: string, patch: Partial<MediaRow>) {
-    setData((current) => ({ ...current, media: current.media.map((item) => item.id === id ? { ...item, ...patch } : item) }));
   }
   function updateForm(id: string, patch: Partial<FormRow>) {
     setData((current) => ({ ...current, forms: current.forms.map((form) => form.id === id ? { ...form, ...patch } : form) }));
@@ -245,7 +267,7 @@ function AdminPanel() {
 
           {active === "botoes" && <div className="space-y-5"><Help text="Altere o texto e o destino de cada botão. Os botões de WhatsApp usam o número definido na área WhatsApp." />{buttonsBySection.map(({ section, buttons }) => <Panel key={section.id} title={section.name} subtitle={`${buttons.length} botões ou links`}><div className="space-y-4">{buttons.map((button) => <div key={button.id} className="rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Texto que aparece" value={button.label} onChange={(value) => updateButton(button.id, { label: value })} /><SelectField label="Tipo de destino" value={button.destination_type} onChange={(value) => updateButton(button.id, { destination_type: value as ButtonRow["destination_type"] })} options={[["whatsapp", "WhatsApp"], ["anchor", "Seção do site"], ["url", "Outro link"], ["email", "E-mail"], ["phone", "Telefone"], ["page", "Página"]]} /></div>{button.destination_type !== "whatsapp" && <Field label="Link ou destino" value={button.destination_value ?? ""} onChange={(value) => updateButton(button.id, { destination_value: value })} />}<div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Toggle label="Abrir em nova aba" checked={button.open_new_tab} onChange={(checked) => updateButton(button.id, { open_new_tab: checked })} /><SaveButton compact busy={saving === `button-${button.id}`} onClick={() => token && void saveAction(`button-${button.id}`, () => adminTable("buttons", { method: "PATCH", token, query: `?id=eq.${button.id}`, body: { label: button.label, destination_type: button.destination_type, destination_value: button.destination_value, open_new_tab: button.open_new_tab, is_active: button.is_active } }))} label="Salvar botão" /></div></div>)}</div></Panel>)}</div>}
 
-          {active === "imagens" && <div className="space-y-5"><Help text="Cole a nova URL da imagem ou vídeo. A prévia aparece logo abaixo antes de salvar." /><div className="grid gap-4 lg:grid-cols-2">{data.media.map((item) => <Panel key={item.id} title={item.label || "Mídia"} subtitle={item.media_type === "video" ? "Vídeo" : "Imagem"}><Field label="URL do arquivo" value={item.public_url ?? ""} onChange={(value) => updateMedia(item.id, { public_url: value })} />{item.media_type !== "video" && <Field label="Descrição da imagem" value={item.alt_text ?? ""} onChange={(value) => updateMedia(item.id, { alt_text: value })} />}{item.public_url && item.media_type !== "video" && <img src={item.public_url} alt={item.alt_text ?? ""} className="mt-4 h-44 w-full rounded-xl bg-[#ece8e0] object-cover" />}{item.public_url && item.media_type === "video" && <video src={item.public_url} controls className="mt-4 h-44 w-full rounded-xl bg-black object-contain" />}<div className="mt-4"><SaveButton compact busy={saving === `media-${item.id}`} onClick={() => token && void saveAction(`media-${item.id}`, () => adminTable("media", { method: "PATCH", token, query: `?id=eq.${item.id}`, body: { public_url: item.public_url, alt_text: item.alt_text, caption: item.caption, is_active: item.is_active } }))} label="Salvar mídia" /></div></Panel>)}</div></div>}
+          {active === "imagens" && <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{data.media.filter((item) => Boolean(item.public_url)).map((item) => { const changing = saving === `media-upload-${item.id}`; const removing = saving === `media-remove-${item.id}`; return <article key={item.id} className="group overflow-hidden rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><div className="relative aspect-[4/3] overflow-hidden bg-[#e9e5de]">{item.media_type === "video" ? <video src={item.public_url ?? ""} controls preload="metadata" className="h-full w-full object-cover" /> : <img src={item.public_url ?? ""} alt={item.alt_text || item.label || "Imagem do site"} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" />}{(changing || removing) && <div className="absolute inset-0 grid place-items-center bg-[#102f45]/65 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>}<span className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] truncate rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">{item.label || (item.media_type === "video" ? "Vídeo" : "Imagem")}</span></div><div className="flex items-center gap-3 p-3"><label className={`flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#163d5a] px-4 text-sm font-semibold text-white transition hover:bg-[#0e3049] ${(changing || removing) ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />Trocar<input type="file" className="sr-only" disabled={changing || removing} accept={item.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp,image/gif,image/svg+xml"} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void replaceMedia(item, file); }} /></label><button type="button" disabled={changing || removing} onClick={() => void removeMedia(item)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-red-200 text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${item.media_type === "video" ? "vídeo" : "imagem"}`} title="Remover"><Trash2 className="h-5 w-5" /></button></div></article>; })}{!data.media.some((item) => Boolean(item.public_url)) && <div className="sm:col-span-2 xl:col-span-3"><Empty text="Nenhuma imagem ou vídeo cadastrado." /></div>}</div>}
 
           {active === "formulario" && <div className="space-y-5">{data.forms.map((form) => <Panel key={form.id} title={form.name} subtitle="Campos recebidos dos clientes"><div className="grid gap-4 md:grid-cols-2"><Field label="Nome do formulário" value={form.name} onChange={(value) => updateForm(form.id, { name: value })} /><Toggle label="Formulário ativo" checked={form.is_active} onChange={(checked) => updateForm(form.id, { is_active: checked })} /></div><TextAreaField label="Mensagem depois do envio" value={form.success_message} onChange={(value) => updateForm(form.id, { success_message: value })} /><div className="space-y-3"><p className="text-sm font-semibold">Campos do formulário</p>{form.fields.map((field, index) => <div key={`${field.name}-${index}`} className="grid gap-3 rounded-xl bg-[#f7f5f1] p-3 md:grid-cols-[1fr_160px_auto]"><Field label={`Campo ${index + 1}`} value={field.label ?? ""} onChange={(value) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: value } : item) })} /><SelectField label="Tipo" value={field.type ?? "text"} onChange={(value) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, type: value } : item) })} options={[["text", "Texto"], ["tel", "Telefone"], ["email", "E-mail"], ["textarea", "Texto longo"]]} /><Toggle label="Obrigatório" checked={Boolean(field.required)} onChange={(checked) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, required: checked } : item) })} /></div>)}</div><SaveButton busy={saving === `form-${form.id}`} onClick={() => token && void saveAction(`form-${form.id}`, () => adminTable("forms", { method: "PATCH", token, query: `?id=eq.${form.id}`, body: { name: form.name, fields: form.fields, success_message: form.success_message, is_active: form.is_active } }))} label="Salvar formulário" /></Panel>)}{!data.forms.length && <Empty text="Nenhum formulário cadastrado." />}</div>}
 
