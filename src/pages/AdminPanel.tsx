@@ -35,7 +35,7 @@ const navigation = [
 ] as const;
 type PageKey = (typeof navigation)[number][0];
 const leadStatuses = ["Novo", "Em contato", "Respondido", "Qualificado", "Convertido", "Arquivado"];
-type TextComposer = { sectionId: string; text: string; inheritFrom: string };
+type TextComposer = { sectionId: string; text: string; afterBlockKey: string | null };
 
 function AdminPanel() {
   const [token, setToken] = useState(() => getStoredAdminToken());
@@ -145,8 +145,10 @@ function AdminPanel() {
       await action();
       setFeedback(success);
       await loadData();
+      return true;
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível salvar."));
+      return false;
     } finally {
       setSaving(null);
     }
@@ -162,12 +164,11 @@ function AdminPanel() {
     });
   }
 
-  function startAddingText(section: SectionRow, blocks: ContentBlockRow[]) {
-    const template = chooseTextTemplate(blocks);
-    setTextComposer({ sectionId: section.id, text: "", inheritFrom: template?.block_key ?? "" });
+  function startAddingText(section: SectionRow, afterBlock: ContentBlockRow | null) {
+    setTextComposer({ sectionId: section.id, text: "", afterBlockKey: afterBlock?.block_key ?? null });
   }
 
-  async function addTextBlock(section: SectionRow, blocks: ContentBlockRow[]) {
+  async function addTextBlock(section: SectionRow) {
     if (!token || textComposer?.sectionId !== section.id) return;
     const text = textComposer.text.trim();
     if (!text) {
@@ -175,31 +176,45 @@ function AdminPanel() {
       return;
     }
 
-    const sortOrder = Math.max(0, ...blocks.map((block) => block.sort_order)) + 1;
+    const sectionBlocks = data.blocks
+      .filter((block) => block.section_id === section.id)
+      .sort((first, second) => first.sort_order - second.sort_order);
+    const inheritedBlock = sectionBlocks.find((block) => block.block_key === textComposer.afterBlockKey) ?? null;
+    const sortOrder = inheritedBlock
+      ? inheritedBlock.sort_order + 1
+      : Math.max(0, ...sectionBlocks.map((block) => block.sort_order)) + 1;
+    const blocksToMove = sectionBlocks.filter((block) => block.sort_order >= sortOrder);
     const blockKey = `cms-text-user-${crypto.randomUUID().replace(/-/g, "")}`;
-    const inheritedBlock = blocks.find((block) => block.block_key === textComposer.inheritFrom) ?? chooseTextTemplate(blocks);
 
-    await saveAction(`text-add-${section.id}`, () => adminTable<ContentBlockRow[]>("content_blocks", {
-      method: "POST",
-      token,
-      body: {
-        section_id: section.id,
-        block_key: blockKey,
-        type: text.length > 90 ? "textarea" : "text",
-        label: `Texto adicionado ${blocks.filter((block) => block.style?.dynamic === true).length + 1}`,
-        sort_order: sortOrder,
-        is_active: true,
-        draft_content: { text },
-        published_content: { text },
-        style: {
-          dynamic: true,
-          section_key: section.section_key,
-          inherit_from: inheritedBlock?.block_key ?? null,
-          placement: "after",
+    const saved = await saveAction(`text-add-${section.id}`, async () => {
+      await Promise.all(blocksToMove.map((block) => adminTable("content_blocks", {
+        method: "PATCH",
+        token,
+        query: `?id=eq.${block.id}`,
+        body: { sort_order: block.sort_order + 1 },
+      })));
+      await adminTable<ContentBlockRow[]>("content_blocks", {
+        method: "POST",
+        token,
+        body: {
+          section_id: section.id,
+          block_key: blockKey,
+          type: text.length > 90 ? "textarea" : "text",
+          label: `Novo texto ${sectionBlocks.filter((block) => block.style?.dynamic === true).length + 1}`,
+          sort_order: sortOrder,
+          is_active: true,
+          draft_content: { text },
+          published_content: { text },
+          style: {
+            dynamic: true,
+            section_key: section.section_key,
+            inherit_from: inheritedBlock?.block_key ?? null,
+            placement: "after",
+          },
         },
-      },
-    }), "Texto adicionado e publicado");
-    setTextComposer(null);
+      });
+    }, "Novo texto adicionado ao site");
+    if (saved) setTextComposer(null);
   }
 
   async function removeTextBlock(block: ContentBlockRow) {
@@ -322,36 +337,38 @@ function AdminPanel() {
           {active === "resumo" && <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Metric label="Visitas hoje" value={metrics.today} /><Metric label="Total de visitas" value={metrics.views} /><Metric label="Visitantes" value={metrics.visitors} /><Metric label="Sessões" value={metrics.sessions} /><Metric label="Leads" value={metrics.leads} /><Metric label="Cliques no WhatsApp" value={metrics.whatsapp} /></div><Panel title="O que você quer mudar?" subtitle="Acesse direto as áreas mais usadas."><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Shortcut icon={<FileText />} label="Editar textos" onClick={() => setActive("textos")} /><Shortcut icon={<Link2 />} label="Editar botões" onClick={() => setActive("botoes")} /><Shortcut icon={<Image />} label="Trocar imagens" onClick={() => setActive("imagens")} /><Shortcut icon={<MessageCircle />} label="Alterar WhatsApp" onClick={() => setActive("whatsapp")} /></div></Panel></div>}
 
           {active === "textos" && <div className="space-y-4">
-            <Panel title="Textos separados por seção" subtitle="Edite, adicione ou remova textos. Todo texto novo copia automaticamente o estilo da própria seção.">
+            <Panel title="Editar textos" subtitle="Abra uma seção e altere o texto. Para criar outro, clique em Novo abaixo no lugar onde ele deve aparecer.">
               <div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-[#879198]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar um texto..." className="h-11 w-full rounded-xl border border-[#d9d3c8] pl-10 pr-3 outline-none focus:border-[#d58b43]" /></div>
             </Panel>
             {blocksBySection.map(({ section, blocks }, index) => {
               const composer = textComposer?.sectionId === section.id ? textComposer : null;
               const composing = Boolean(composer);
+              const allSectionBlocks = data.blocks.filter((block) => block.section_id === section.id);
               return <details key={section.id} open={index === 0 || composing} className="group rounded-2xl border border-[#ded8ce] bg-white shadow-sm">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">{section.name}</h2><p className="text-sm text-[#778188]">{blocks.length} {blocks.length === 1 ? "texto" : "textos"}</p></div><ChevronDown className="h-5 w-5 transition group-open:rotate-180" /></summary>
-                <div className="space-y-4 border-t border-[#eee9e1] p-5">
-                  {blocks.map((block) => {
+                <div className="space-y-3 border-t border-[#eee9e1] p-4 md:p-5">
+                  {blocks.map((block, blockIndex) => {
                     const value = String(block.draft_content.text ?? "");
-                    const field = block.type === "textarea" || value.length > 90
-                      ? <TextAreaField label={block.label || "Texto"} value={value} onChange={(next) => updateBlock(block.id, next)} />
-                      : <Field label={block.label || "Texto"} value={value} onChange={(next) => updateBlock(block.id, next)} />;
-                    return <div key={block.id} className="grid gap-3 rounded-xl border border-[#e7e1d8] bg-[#fcfbf9] p-4 sm:grid-cols-[minmax(0,1fr)_44px] sm:items-end">
-                      {field}
-                      <button type="button" disabled={saving === `text-remove-${block.id}`} onClick={() => void removeTextBlock(block)} className="grid h-11 w-11 place-items-center rounded-xl border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${block.label || "texto"}`} title="Remover texto">{saving === `text-remove-${block.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button>
+                    const addingBelow = composer?.afterBlockKey === block.block_key;
+                    const inputClassName = "w-full rounded-xl border border-[#d9d3c8] bg-white px-3 outline-none transition focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15";
+                    return <div key={block.id} className="rounded-xl border border-[#e7e1d8] bg-[#fcfbf9] p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <span className="rounded-full bg-[#edf1f3] px-3 py-1 text-xs font-semibold text-[#536875]">Texto {blockIndex + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => addingBelow ? setTextComposer(null) : startAddingText(section, block)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#b9cbd5] bg-white px-3 text-xs font-semibold text-[#163d5a] transition hover:bg-[#edf5f9]"><Plus className="h-3.5 w-3.5" /> Novo abaixo</button>
+                          <button type="button" disabled={saving === `text-remove-${block.id}`} onClick={() => void removeTextBlock(block)} className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover texto ${blockIndex + 1}`} title="Remover texto">{saving === `text-remove-${block.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button>
+                        </div>
+                      </div>
+                      {block.type === "textarea" || value.length > 90
+                        ? <textarea aria-label={`Texto ${blockIndex + 1}`} value={value} onChange={(event) => updateBlock(block.id, event.target.value)} className={`${inputClassName} min-h-24 resize-y py-3`} />
+                        : <input aria-label={`Texto ${blockIndex + 1}`} value={value} onChange={(event) => updateBlock(block.id, event.target.value)} className={`${inputClassName} h-11`} />}
+                      {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
                     </div>;
                   })}
-                  {!blocks.length && !composing && <Empty text="Esta seção ainda não tem textos. Clique em Adicionar texto para criar o primeiro." />}
-                  {composer && <div className="rounded-2xl border-2 border-dashed border-[#c7d7df] bg-[#f4f8fa] p-4">
-                    <div className="mb-4"><h3 className="font-semibold">Novo texto</h3><p className="mt-1 text-sm text-[#657780]">Ele será inserido na seção e terá a mesma aparência do texto escolhido abaixo.</p></div>
-                    <TextAreaField label="Texto que será adicionado" value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} />
-                    {blocks.length > 0 && <SelectField label="Usar o mesmo estilo de" value={composer.inheritFrom} onChange={(inheritFrom) => setTextComposer({ ...composer, inheritFrom })} options={blocks.map((block) => [block.block_key, block.label || "Texto"] as const)} />}
-                    <div className="mt-4 flex flex-wrap gap-3"><SaveButton compact busy={saving === `text-add-${section.id}`} onClick={() => void addTextBlock(section, blocks)} label="Adicionar e publicar" /><button type="button" onClick={() => setTextComposer(null)} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Cancelar</button></div>
-                  </div>}
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#eee9e1] pt-4">
-                    <button type="button" onClick={() => composing ? setTextComposer(null) : startAddingText(section, blocks)} className="inline-flex items-center gap-2 rounded-xl border border-[#b9cbd5] bg-[#edf5f9] px-4 py-2.5 text-sm font-semibold text-[#163d5a] transition hover:bg-[#e3eff4]"><Plus className="h-4 w-4" /> Adicionar texto</button>
-                    {blocks.length > 0 && <SaveButton busy={saving === `section-${section.id}`} onClick={() => void saveTextSection(section, blocks)} label="Salvar textos" />}
-                  </div>
+                  {!blocks.length && allSectionBlocks.length > 0 && <Empty text="Nenhum texto desta seção corresponde à busca." />}
+                  {!allSectionBlocks.length && !composer && <><Empty text="Esta seção ainda não tem textos." /><button type="button" onClick={() => startAddingText(section, null)} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> Adicionar primeiro texto</button></>}
+                  {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
+                  {allSectionBlocks.length > 0 && <div className="flex justify-end border-t border-[#eee9e1] pt-4"><SaveButton busy={saving === `section-${section.id}`} onClick={() => void saveTextSection(section, allSectionBlocks)} label="Salvar alterações" /></div>}
                 </div>
               </details>;
             })}
@@ -401,18 +418,19 @@ function Metric({ label, value }: { label: string; value: number }) { return <di
 function Shortcut({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) { return <button onClick={onClick} className="flex items-center gap-3 rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4 text-left font-semibold transition hover:border-[#d58b43] hover:bg-[#fffaf2]"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e7eef2] text-[#163d5a] [&>svg]:h-4 [&>svg]:w-4">{icon}</span>{label}</button>; }
 function Help({ text }: { text: string }) { return <div className="rounded-2xl border border-[#cbdce6] bg-[#edf5f9] p-4 text-sm text-[#274b60]">{text}</div>; }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-[#d9d3c8] bg-[#faf9f6] p-6 text-center text-sm text-[#778188]">{text}</div>; }
+function NewTextBox({ value, onChange, onAdd, onCancel, busy }: { value: string; onChange: (value: string) => void; onAdd: () => void; onCancel: () => void; busy: boolean }) {
+  return <div className="mt-4 rounded-xl border-2 border-dashed border-[#b9cbd5] bg-[#f1f7fa] p-4">
+    <label className="block"><span className="text-sm font-semibold text-[#354b59]">Novo texto</span><textarea autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Digite aqui..." className="mt-2 min-h-24 w-full resize-y rounded-xl border border-[#cbd8df] bg-white px-3 py-3 outline-none focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15" /></label>
+    <p className="mt-2 text-xs text-[#657780]">Ele será criado como um bloco separado logo abaixo, com o mesmo visual.</p>
+    <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={onAdd} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Adicionar texto</button><button type="button" onClick={onCancel} disabled={busy} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60">Cancelar</button></div>
+  </div>;
+}
 function ObjectFields({ title, value, onChange }: { title?: string; value: JsonMap; onChange: (value: JsonMap) => void }) {
   const entries = Object.entries(value).filter(([, item]) => ["string", "number", "boolean"].includes(typeof item));
   if (!entries.length) return null;
   return <div className="space-y-3">{title && <h3 className="font-semibold">{title}</h3>}<div className="grid gap-4 md:grid-cols-2">{entries.map(([key, item]) => typeof item === "boolean" ? <Toggle key={key} label={friendlyLabel(key)} checked={item} onChange={(checked) => onChange({ ...value, [key]: checked })} /> : <Field key={key} label={friendlyLabel(key)} value={String(item ?? "")} onChange={(next) => onChange({ ...value, [key]: next })} />)}</div></div>;
 }
 function friendlyLabel(key: string) { const labels: Record<string, string> = { pixel_id: "ID do pixel", project_id: "ID do projeto", measurement_id: "ID de medição", container_id: "ID do contêiner" }; return labels[key] || key.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase()); }
-function chooseTextTemplate(blocks: ContentBlockRow[]) {
-  return blocks.find((block) => block.type === "textarea" && /texto|descri|par[aá]grafo|subt[ií]tulo/i.test(block.label ?? ""))
-    ?? blocks.find((block) => block.type === "textarea")
-    ?? blocks.find((block) => /texto|descri|par[aá]grafo/i.test(block.label ?? ""))
-    ?? blocks[0];
-}
 function leadWhatsapp(value: string) { const digits = value.replace(/\D/g, ""); return `https://wa.me/${digits.startsWith("55") ? digits : `55${digits}`}`; }
 function messageFrom(error: unknown, fallback: string) { return error instanceof Error ? error.message : fallback; }
 

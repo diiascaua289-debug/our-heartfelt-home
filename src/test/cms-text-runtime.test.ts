@@ -19,6 +19,11 @@ describe("CMS text runtime", () => {
       <section data-cms-section="sobre">
         <p class="about-copy"><span data-cms-key="cms-text-about-copy">Texto original</span></p>
       </section>
+      <section data-cms-section="incluso">
+        <div class="incluso-items">
+          <div class="inc-item"><span class="inc-icon">✓</span><span data-cms-key="cms-text-incluso-005">Guia local</span></div>
+        </div>
+      </section>
       <footer data-cms-section="contato">
         <p class="footer-desc"><span data-cms-key="cms-text-footer-copy">Rodapé original</span></p>
       </footer>
@@ -38,18 +43,32 @@ describe("CMS text runtime", () => {
         sort_order: 1,
       },
       {
+        block_key: "cms-text-incluso-005",
+        published_content: { text: "Guia local" },
+        style: {},
+        is_active: true,
+        sort_order: 2,
+      },
+      {
+        block_key: "cms-text-user-incluso",
+        published_content: { text: "Novo item incluso" },
+        style: { dynamic: true, section_key: "cms-incluso", inherit_from: "cms-text-incluso-005" },
+        is_active: true,
+        sort_order: 3,
+      },
+      {
         block_key: "cms-text-user-header",
         published_content: { text: "Novo item" },
         style: { dynamic: true, section_key: "cms-header" },
         is_active: true,
-        sort_order: 2,
+        sort_order: 4,
       },
       {
         block_key: "cms-text-user-footer",
         published_content: { text: "Novo texto do rodapé" },
         style: { dynamic: true, section_key: "cms-contato", inherit_from: "cms-text-footer-copy" },
         is_active: true,
-        sort_order: 3,
+        sort_order: 5,
       },
     ];
 
@@ -67,6 +86,13 @@ describe("CMS text runtime", () => {
     const headerText = document.querySelector("header .cms-added-text");
     expect(headerText).toHaveClass("nav-link");
     expect(headerText).toHaveTextContent("Novo item");
+    const originalIncludedItem = document.querySelector("[data-cms-key='cms-text-incluso-005']")!.closest(".inc-item");
+    const newIncludedItem = document.querySelector("[data-cms-key='cms-text-user-incluso']")!.closest(".inc-item");
+    expect(newIncludedItem).not.toBe(originalIncludedItem);
+    expect(newIncludedItem?.parentElement).toBe(originalIncludedItem?.parentElement);
+    expect(originalIncludedItem?.nextElementSibling).toBe(newIncludedItem);
+    expect(newIncludedItem).toHaveTextContent("Novo item incluso");
+    expect(newIncludedItem?.querySelector(".inc-icon")).toHaveTextContent("✓");
     const footerText = document.querySelector("footer p.cms-added-text");
     expect(footerText).toHaveClass("footer-desc");
     expect(footerText).toHaveTextContent("Novo texto do rodapé");

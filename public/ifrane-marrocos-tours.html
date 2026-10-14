@@ -2266,10 +2266,11 @@ window.addEventListener('load', () => {
   };
   const textHostSelector = [
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'a',
-    '.hero-badge', '.section-label', '.marquee-item', '.feature-tag', '.pacote-tag',
+    '.hero-badge', '.section-label', '.marquee-item', '.feature-tag', '.pacote-tag', '.inc-item',
     '.route-day-title', '.gallery-overlay > span', '.faq-q > span', '.faq-a-inner',
     '.footer-logo > span', '.footer-contact > div', '.footer-bottom > span'
   ].join(',');
+  const cloneableTextHostSelector = '.inc-item, .feature-tag, .marquee-item, .pacote-tag, .footer-contact > div';
   const textHost = (element) => element?.closest(textHostSelector) || element;
   const hideTextBlock = (element) => {
     if (!element) return;
@@ -2280,20 +2281,32 @@ window.addEventListener('load', () => {
   };
   const createDynamicText = (source, blockKey, value) => {
     const sourceHost = textHost(source);
+    const canCloneStructure = sourceHost.matches(cloneableTextHostSelector);
     const tagName = sourceHost.matches('a, button') ? 'span' : sourceHost.tagName.toLowerCase();
-    const host = document.createElement(tagName);
-    host.className = sourceHost.className;
-    host.style.cssText = sourceHost.style.cssText;
+    const host = canCloneStructure ? sourceHost.cloneNode(true) : document.createElement(tagName);
+    if (!canCloneStructure) {
+      host.className = sourceHost.className;
+      host.style.cssText = sourceHost.style.cssText;
+    }
     host.classList.add('cms-added-text');
+    host.hidden = false;
+    host.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
     host.removeAttribute('id');
-    host.removeAttribute('href');
-    host.removeAttribute('target');
-    host.removeAttribute('aria-label');
-    host.removeAttribute('aria-expanded');
-    const content = document.createElement('span');
+    host.querySelectorAll('[data-cms-button]').forEach((element) => element.removeAttribute('data-cms-button'));
+    host.removeAttribute('data-cms-button');
+    ['href', 'target', 'aria-label', 'aria-expanded'].forEach((attribute) => host.removeAttribute(attribute));
+    const sourceKey = source.dataset.cmsKey;
+    let content = canCloneStructure && sourceKey
+      ? host.querySelector(`[data-cms-key="${CSS.escape(sourceKey)}"]`)
+      : null;
+    host.querySelectorAll('[data-cms-key]').forEach((element) => element.removeAttribute('data-cms-key'));
+    host.removeAttribute('data-cms-key');
+    if (!content) {
+      content = document.createElement('span');
+      host.appendChild(content);
+    }
     content.dataset.cmsKey = blockKey;
     content.textContent = value;
-    host.appendChild(content);
     return { host, sourceHost };
   };
   const insertDynamicBlock = (block) => {
