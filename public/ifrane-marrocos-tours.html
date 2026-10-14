@@ -1403,6 +1403,11 @@ i[class*=" fa"] {
   color: var(--orange);
 }
 
+.cms-added-text {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 </style>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 </head>
@@ -2253,9 +2258,68 @@ window.addEventListener('load', () => {
     const message = settings.initial_message ? `?text=${encodeURIComponent(settings.initial_message)}` : '';
     return `https://wa.me/${number}${message}`;
   };
+  const dynamicAnchors = new Map();
+  const dynamicTemplateSelectors = {
+    header: '.nav-link:last-of-type',
+    hero: '.hero-subtitle [data-cms-key]',
+    contato: '.footer-desc [data-cms-key]'
+  };
+  const textHostSelector = [
+    'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'a',
+    '.hero-badge', '.section-label', '.marquee-item', '.feature-tag', '.pacote-tag',
+    '.route-day-title', '.gallery-overlay > span', '.faq-q > span', '.faq-a-inner',
+    '.footer-logo > span', '.footer-contact > div', '.footer-bottom > span'
+  ].join(',');
+  const textHost = (element) => element?.closest(textHostSelector) || element;
+  const hideTextBlock = (element) => {
+    if (!element) return;
+    const host = textHost(element);
+    const blockCount = host === element ? 0 : host.querySelectorAll('[data-cms-key]').length;
+    if (host !== element && blockCount === 1) host.hidden = true;
+    else element.hidden = true;
+  };
+  const createDynamicText = (source, blockKey, value) => {
+    const sourceHost = textHost(source);
+    const tagName = sourceHost.matches('a, button') ? 'span' : sourceHost.tagName.toLowerCase();
+    const host = document.createElement(tagName);
+    host.className = sourceHost.className;
+    host.style.cssText = sourceHost.style.cssText;
+    host.classList.add('cms-added-text');
+    host.removeAttribute('id');
+    host.removeAttribute('href');
+    host.removeAttribute('target');
+    host.removeAttribute('aria-label');
+    host.removeAttribute('aria-expanded');
+    const content = document.createElement('span');
+    content.dataset.cmsKey = blockKey;
+    content.textContent = value;
+    host.appendChild(content);
+    return { host, sourceHost };
+  };
+  const insertDynamicBlock = (block) => {
+    const value = block.published_content && block.published_content.text;
+    if (!block.is_active || block.style?.removed === true || block.published_content?.removed === true || typeof value !== 'string' || !value.trim()) return;
+    const style = block.style || {};
+    const sectionName = String(style.section_key || '').replace(/^cms-/, '');
+    const section = sectionName ? document.querySelector(`[data-cms-section="${CSS.escape(sectionName)}"]`) : null;
+    let source = style.inherit_from
+      ? document.querySelector(`[data-cms-key="${CSS.escape(String(style.inherit_from))}"]`)
+      : null;
+    if (!source && section) {
+      const selector = dynamicTemplateSelectors[sectionName] || '[data-cms-key], [data-cms-button]';
+      source = section.querySelector(selector);
+    }
+    if (!source) return;
+    const { host, sourceHost } = createDynamicText(source, block.block_key, value);
+    const anchorKey = String(style.inherit_from || `section:${sectionName}`);
+    const anchor = dynamicAnchors.get(anchorKey) || sourceHost;
+    anchor.insertAdjacentElement('afterend', host);
+    dynamicAnchors.set(anchorKey, host);
+    dynamicAnchors.set(block.block_key, host);
+  };
 
   Promise.all([
-    read('content_blocks', 'select=block_key,published_content&is_active=eq.true'),
+    read('content_blocks', 'select=block_key,published_content,style,is_active,sort_order&block_key=like.cms-text-*&order=sort_order.asc'),
     read('buttons', 'select=button_key,label,destination_type,destination_value,open_new_tab,is_active&is_active=eq.true'),
     read('media', 'select=path,public_url,alt_text,media_type,is_active&path=like.cms-*'),
     read('whatsapp_settings', 'select=country_code,ddd,phone,initial_message,floating_enabled&limit=1'),
@@ -2264,11 +2328,19 @@ window.addEventListener('load', () => {
     const globalWhatsapp = whatsappHref(whatsappRows[0]);
     const floatingWhatsapp = document.querySelector('.wa-float');
     if (floatingWhatsapp) floatingWhatsapp.hidden = whatsappRows[0]?.floating_enabled === false;
-    blocks.forEach((block) => {
+    blocks.filter((block) => !block.style?.dynamic).forEach((block) => {
       const element = document.querySelector(`[data-cms-key="${CSS.escape(block.block_key)}"]`);
       const value = block.published_content && block.published_content.text;
-      if (element && typeof value === 'string') element.textContent = value;
+      if (!block.is_active || block.style?.removed === true || block.published_content?.removed === true) {
+        hideTextBlock(element);
+        return;
+      }
+      if (element && typeof value === 'string') {
+        element.hidden = false;
+        element.textContent = value;
+      }
     });
+    blocks.filter((block) => block.style?.dynamic).forEach(insertDynamicBlock);
     buttons.forEach((button) => {
       const element = document.querySelector(`[data-cms-button="${CSS.escape(button.button_key)}"]`);
       if (!element) return;
