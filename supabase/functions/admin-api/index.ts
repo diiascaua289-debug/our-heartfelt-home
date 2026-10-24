@@ -162,6 +162,42 @@ Deno.serve(async (req) => {
     return json((await updateRes.json())[0]);
   }
 
+  if (resource === "media-library-upload" && req.method === "POST") {
+    const contentType = (req.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    const fileName = (url.searchParams.get("filename") || "imagem").slice(0, 200);
+    const extensionByType: Record<string, string> = {
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+      "image/gif": "gif", "image/svg+xml": "svg",
+    };
+    const extension = extensionByType[contentType];
+
+    if (!extension) return json({ error: "Escolha uma imagem JPEG, PNG, WebP, GIF ou SVG." }, 400);
+    if (!req.body || contentLength <= 0) return json({ error: "Arquivo vazio." }, 400);
+    if (contentLength > 50 * 1024 * 1024) return json({ error: "A imagem deve ter no máximo 50 MB." }, 413);
+
+    const bucket = "site-media";
+    const objectPath = `admin/uploads/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const encodedObjectPath = objectPath.split("/").map(encodeURIComponent).join("/");
+    const uploadRes = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(bucket)}/${encodedObjectPath}`, {
+      method: "POST",
+      headers: { "Content-Type": contentType, "x-upsert": "false", "cache-control": "3600" },
+      body: req.body,
+    });
+    if (!uploadRes.ok) {
+      const uploadError = await uploadRes.json().catch(() => null);
+      return json({ error: uploadError?.message || uploadError?.error || "Não foi possível enviar a imagem." }, uploadRes.status);
+    }
+
+    return json({
+      path: objectPath,
+      public_url: `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedObjectPath}`,
+      media_type: "image",
+      label: fileName,
+      alt_text: fileName,
+    });
+  }
+
   if (resource !== "table" || !adminTables.has(name)) return json({ error: "not_found" }, 404);
 
   const query = url.search || "";
