@@ -2316,6 +2316,7 @@ window.addEventListener('load', () => {
       host.style.cssText = sourceHost.style.cssText;
     }
     host.classList.add('cms-added-text');
+    if (host.classList.contains('reveal')) host.classList.add('visible');
     host.hidden = false;
     host.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
     host.removeAttribute('id');
