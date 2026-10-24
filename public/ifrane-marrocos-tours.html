@@ -1762,6 +1762,9 @@ i[class*=" fa"] {
 <div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-campground"></i></span> <span data-cms-key="cms-text-incluso-010">Pernoite em tendas no deserto</span></div>
 <div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-plane"></i></span> <span data-cms-key="cms-text-incluso-011">Transfer para aeroportos</span></div>
 <div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-jeep"></i></span> <span data-cms-key="cms-text-incluso-012">Excursão 4x4 no deserto</span></div>
+<div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-hotel"></i></span> <span data-cms-key="cms-text-incluso-020">Reservas de hotéis</span></div>
+<div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-ship"></i></span> <span data-cms-key="cms-text-incluso-021">Reservas de cruzeiros</span></div>
+<div class="inc-item"><span class="inc-icon"><i aria-hidden="true" class="fa-solid fa-plane"></i></span> <span data-cms-key="cms-text-incluso-022">Passagens aéreas</span></div>
 </div>
 </div>
 <div class="incluso-col nao reveal reveal-delay-2">
@@ -2262,7 +2265,15 @@ window.addEventListener('load', () => {
   const dynamicTemplateSelectors = {
     header: '.nav-link:last-of-type',
     hero: '.hero-subtitle [data-cms-key]',
-    contato: '.footer-desc [data-cms-key]'
+    contato: '.footer-desc [data-cms-key]',
+    hoteis: '.hotel-card .hotel-body h3 [data-cms-key]',
+    galeria: '.gallery-item .gallery-overlay [data-cms-key]',
+    pacotes: '.pacote-card .pacote-body h3 [data-cms-key]'
+  };
+  const imageCardTemplates = {
+    hoteis: { card: '.hotel-card', source: '.hotel-card .hotel-body h3 [data-cms-key]', image: '.hotel-img img' },
+    galeria: { card: '.gallery-item', source: '.gallery-item .gallery-overlay [data-cms-key]', image: ':scope > img' },
+    pacotes: { card: '.pacote-card', source: '.pacote-card .pacote-body h3 [data-cms-key]', image: '.pacote-img img', titleOnly: true }
   };
   const textHostSelector = [
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'a',
@@ -2274,14 +2285,30 @@ window.addEventListener('load', () => {
   const textHost = (element) => element?.closest(textHostSelector) || element;
   const hideTextBlock = (element) => {
     if (!element) return;
+    const blockKey = element.dataset.cmsKey || '';
+    const sectionName = blockKey.match(/^cms-text-(hoteis|galeria|pacotes)-/)?.[1];
+    const template = sectionName && imageCardTemplates[sectionName];
+    const imageCard = template && element.closest(template.card);
+    if (imageCard) {
+      imageCard.hidden = true;
+      return;
+    }
     const host = textHost(element);
     const blockCount = host === element ? 0 : host.querySelectorAll('[data-cms-key]').length;
     if (host !== element && blockCount === 1) host.hidden = true;
     else element.hidden = true;
   };
-  const createDynamicText = (source, blockKey, value) => {
-    const sourceHost = textHost(source);
-    const canCloneStructure = sourceHost.matches(cloneableTextHostSelector);
+  const sectionNameFromBlock = (block) => String(block.style?.section_key || block.block_key.match(/^cms-text-(.+)-\d+$/)?.[1] || '').replace(/^cms-/, '');
+  const createDynamicText = (source, blockKey, value, sectionName) => {
+    const template = imageCardTemplates[sectionName];
+    let sourceHost = template ? source.closest(template.card) : null;
+    if (template && !sourceHost) {
+      const section = document.querySelector(`[data-cms-section="${CSS.escape(sectionName)}"]`);
+      source = section?.querySelector(template.source) || source;
+      sourceHost = source.closest(template.card);
+    }
+    sourceHost = sourceHost || textHost(source);
+    const canCloneStructure = sourceHost.matches(`${cloneableTextHostSelector}, ${template?.card || '.__no-image-card-template'}`);
     const tagName = sourceHost.matches('a, button') ? 'span' : sourceHost.tagName.toLowerCase();
     const host = canCloneStructure ? sourceHost.cloneNode(true) : document.createElement(tagName);
     if (!canCloneStructure) {
@@ -2296,9 +2323,14 @@ window.addEventListener('load', () => {
     host.removeAttribute('data-cms-button');
     ['href', 'target', 'aria-label', 'aria-expanded'].forEach((attribute) => host.removeAttribute(attribute));
     const sourceKey = source.dataset.cmsKey;
-    let content = canCloneStructure && sourceKey
-      ? host.querySelector(`[data-cms-key="${CSS.escape(sourceKey)}"]`)
-      : null;
+    let content = template?.titleOnly
+      ? host.querySelector('.pacote-body h3 [data-cms-key]')
+      : canCloneStructure && sourceKey
+        ? host.querySelector(`[data-cms-key="${CSS.escape(sourceKey)}"]`)
+        : null;
+    if (template?.titleOnly) {
+      host.querySelectorAll('.pacote-tag, .pacote-body p, .pacote-features, .pacote-cta').forEach((element) => element.remove());
+    }
     host.querySelectorAll('[data-cms-key]').forEach((element) => element.removeAttribute('data-cms-key'));
     host.removeAttribute('data-cms-key');
     if (!content) {
@@ -2323,7 +2355,7 @@ window.addEventListener('load', () => {
       source = section.querySelector(selector);
     }
     if (!source) return;
-    const { host, sourceHost } = createDynamicText(source, block.block_key, value);
+    const { host, sourceHost } = createDynamicText(source, block.block_key, value, sectionName);
     const anchorKey = String(style.inherit_from || `section:${sectionName}`);
     const anchor = dynamicAnchors.get(anchorKey) || sourceHost;
     anchor.insertAdjacentElement('afterend', host);
@@ -2350,6 +2382,10 @@ window.addEventListener('load', () => {
       }
       if (element && typeof value === 'string') {
         element.hidden = false;
+        const sectionName = sectionNameFromBlock(block);
+        const template = imageCardTemplates[sectionName];
+        const imageCard = template && element.closest(template.card);
+        if (imageCard) imageCard.hidden = false;
         element.textContent = value;
       }
     });
@@ -2387,6 +2423,22 @@ window.addEventListener('load', () => {
         if (!item.public_url) return;
         element.style.backgroundImage = `url("${item.public_url.replace(/"/g, '\\"')}")`;
       });
+    });
+    const applyImageToBlock = (element, content, sectionName) => {
+      if (!element || typeof content?.image_url !== 'string' || !content.image_url.trim()) return;
+      const template = imageCardTemplates[sectionName];
+      const card = template ? element.closest(template.card) : null;
+      const image = card?.querySelector(template.image);
+      if (!image) return;
+      image.src = content.image_url;
+      image.alt = content.image_alt || content.text || image.alt;
+      image.hidden = false;
+    };
+    blocks.forEach((block) => {
+      const sectionName = sectionNameFromBlock(block);
+      const content = block.published_content || {};
+      const element = document.querySelector(`[data-cms-key="${CSS.escape(block.block_key)}"]`);
+      applyImageToBlock(element, content, sectionName);
     });
     if (globalWhatsapp) {
       document.querySelectorAll('a[href*="wa.me"], a[href*="whatsapp"]').forEach((element) => {
