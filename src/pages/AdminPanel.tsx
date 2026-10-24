@@ -35,7 +35,39 @@ const navigation = [
 ] as const;
 type PageKey = (typeof navigation)[number][0];
 const leadStatuses = ["Novo", "Em contato", "Respondido", "Qualificado", "Convertido", "Arquivado"];
-type TextComposer = { sectionId: string; text: string; afterBlockKey: string | null };
+type TextComposer = { sectionId: string; text: string; imageUrl: string; imageAlt: string; afterBlockKey: string | null };
+
+const pairedImageSections = new Set(["hoteis", "galeria", "pacotes"]);
+const inclusionDefaults = [
+  { key: "cms-text-incluso-020", text: "Reservas de hotéis", order: 20 },
+  { key: "cms-text-incluso-021", text: "Reservas de cruzeiros", order: 21 },
+  { key: "cms-text-incluso-022", text: "Passagens aéreas", order: 22 },
+];
+
+function sectionNameFromKey(sectionKey: string) {
+  return sectionKey.replace(/^cms-/, "");
+}
+
+function pairedImagePathForBlock(block: ContentBlockRow) {
+  const match = block.block_key.match(/^cms-text-(hoteis|galeria|pacotes)-(\d+)$/);
+  if (!match) return null;
+  const section = match[1];
+  const index = Number(match[2]);
+  const mediaIndex = section === "hoteis" && index >= 4 && index <= 9
+    ? index - 3
+    : section === "galeria" && index >= 3 && index <= 22
+      ? index - 2
+      : section === "pacotes" && index === 4
+        ? 1
+        : section === "pacotes" && index === 13
+          ? 2
+          : null;
+  return mediaIndex === null ? null : `cms-media-${section}-${String(mediaIndex).padStart(2, "0")}`;
+}
+
+function supportsPairedImages(sectionKey: string) {
+  return pairedImageSections.has(sectionNameFromKey(sectionKey));
+}
 
 function AdminPanel() {
   const [token, setToken] = useState(() => getStoredAdminToken());
@@ -64,7 +96,7 @@ function AdminPanel() {
         if (block.section_id !== section.id) return false;
         if (!term) return true;
         return `${block.label ?? ""} ${String(block.draft_content.text ?? "")}`.toLocaleLowerCase("pt-BR").includes(term);
-      }),
+      }).sort((first, second) => first.sort_order - second.sort_order),
     })).filter((group) => group.blocks.length > 0 || group.section.name.toLocaleLowerCase("pt-BR").includes(term));
   }, [data.blocks, data.sections, search]);
 
@@ -109,7 +141,21 @@ function AdminPanel() {
         adminTable<TrackingIntegration[]>("tracking_integrations", { token: currentToken, query: "?select=*&order=provider.asc" }),
         adminTable<SeoSettings[]>("seo_settings", { token: currentToken, query: "?select=*&limit=1" }),
       ]);
-      setData({ sections, blocks: blocks.filter((block) => block.style?.removed !== true), buttons, media, forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity: identityRows[0] ?? null, tracking, seo: seoRows[0] ?? null });
+      const includedSection = sections.find((section) => sectionNameFromKey(section.section_key) === "incluso");
+      const missingInclusions = includedSection
+        ? inclusionDefaults.filter((item) => !blocks.some((block) => block.block_key === item.key)).map((item) => ({
+          id: `pending:${item.key}`,
+          section_id: includedSection.id,
+          block_key: item.key,
+          type: "text",
+          label: item.text,
+          sort_order: item.order,
+          is_active: true,
+          draft_content: { text: item.text },
+          style: { section_key: includedSection.section_key },
+        } satisfies ContentBlockRow))
+        : [];
+      setData({ sections, blocks: [...blocks.filter((block) => block.style?.removed !== true), ...missingInclusions], buttons, media, forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity: identityRows[0] ?? null, tracking, seo: seoRows[0] ?? null });
       setFeedback("Tudo carregado");
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível carregar o painel."));
@@ -159,13 +205,15 @@ function AdminPanel() {
     await saveAction(`section-${section.id}`, async () => {
       await Promise.all([
         adminTable("sections", { method: "PATCH", token, query: `?id=eq.${section.id}`, body: { name: section.name, sort_order: section.sort_order, is_active: section.is_active, draft_data: section.draft_data, published_data: section.draft_data } }),
-        ...blocks.map((block) => adminTable("content_blocks", { method: "PATCH", token, query: `?id=eq.${block.id}`, body: { label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content } })),
+        ...blocks.map((block) => block.id.startsWith("pending:")
+          ? adminTable("content_blocks", { method: "POST", token, body: { section_id: block.section_id, block_key: block.block_key, type: block.type, label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content, style: block.style } })
+          : adminTable("content_blocks", { method: "PATCH", token, query: `?id=eq.${block.id}`, body: { label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content, style: block.style } })),
       ]);
     });
   }
 
   function startAddingText(section: SectionRow, afterBlock: ContentBlockRow | null) {
-    setTextComposer({ sectionId: section.id, text: "", afterBlockKey: afterBlock?.block_key ?? null });
+    setTextComposer({ sectionId: section.id, text: "", imageUrl: "", imageAlt: "", afterBlockKey: afterBlock?.block_key ?? null });
   }
 
   async function addTextBlock(section: SectionRow) {
@@ -173,6 +221,10 @@ function AdminPanel() {
     const text = textComposer.text.trim();
     if (!text) {
       setFeedback("Escreva o novo texto antes de adicionar.");
+      return;
+    }
+    if (supportsPairedImages(section.section_key) && !textComposer.imageUrl) {
+      setFeedback("Escolha a imagem que corresponde a este novo item.");
       return;
     }
 
@@ -203,8 +255,8 @@ function AdminPanel() {
           label: `Novo texto ${sectionBlocks.filter((block) => block.style?.dynamic === true).length + 1}`,
           sort_order: sortOrder,
           is_active: true,
-          draft_content: { text },
-          published_content: { text },
+          draft_content: { text, ...(textComposer.imageUrl ? { image_url: textComposer.imageUrl, image_alt: textComposer.imageAlt || text } : {}) },
+          published_content: { text, ...(textComposer.imageUrl ? { image_url: textComposer.imageUrl, image_alt: textComposer.imageAlt || text } : {}) },
           style: {
             dynamic: true,
             section_key: section.section_key,
@@ -220,17 +272,20 @@ function AdminPanel() {
   async function removeTextBlock(block: ContentBlockRow) {
     if (!token || !window.confirm("Remover este texto do site?")) return;
     const removedContent = { ...block.draft_content, removed: true };
-    await saveAction(`text-remove-${block.id}`, () => adminTable("content_blocks", {
-      method: "PATCH",
-      token,
-      query: `?id=eq.${block.id}`,
-      body: {
-        is_active: true,
-        draft_content: removedContent,
-        published_content: removedContent,
-        style: { ...block.style, removed: true },
-      },
-    }), "Texto removido do site");
+    const body = {
+      section_id: block.section_id,
+      block_key: block.block_key,
+      type: block.type,
+      label: block.label,
+      sort_order: block.sort_order,
+      is_active: true,
+      draft_content: removedContent,
+      published_content: removedContent,
+      style: { ...block.style, removed: true },
+    };
+    await saveAction(`text-remove-${block.id}`, () => adminTable("content_blocks", block.id.startsWith("pending:")
+      ? { method: "POST", token, body }
+      : { method: "PATCH", token, query: `?id=eq.${block.id}`, body }), "Texto removido do site");
   }
 
   async function updateLeadStatus(id: string, status: string) {
@@ -244,7 +299,7 @@ function AdminPanel() {
     }
   }
 
-  async function replaceMedia(item: MediaRow, file: File) {
+  async function replaceMedia(item: MediaRow, file: File, blockId?: string) {
     if (!token) return;
     const expectsVideo = item.media_type === "video";
     if ((expectsVideo && !file.type.startsWith("video/")) || (!expectsVideo && !file.type.startsWith("image/"))) {
@@ -255,7 +310,25 @@ function AdminPanel() {
       setFeedback("O arquivo deve ter no máximo 50 MB.");
       return;
     }
-    await saveAction(`media-upload-${item.id}`, () => uploadAdminMedia<MediaRow>(item.id, file, token), "Mídia trocada no site");
+    const key = `media-upload-${item.id}`;
+    setSaving(key);
+    setFeedback("Enviando mídia...");
+    try {
+      const updated = await uploadAdminMedia<MediaRow>(item.id, file, token);
+      setData((current) => ({
+        ...current,
+        media: current.media.map((media) => media.id === updated.id ? { ...media, ...updated } : media),
+        blocks: blockId ? current.blocks.map((block) => block.id === blockId ? {
+          ...block,
+          draft_content: { ...block.draft_content, image_url: updated.public_url, image_alt: updated.alt_text ?? block.draft_content.text ?? "" },
+        } : block) : current.blocks,
+      }));
+      setFeedback("Imagem atualizada e vinculada ao texto");
+    } catch (error) {
+      setFeedback(messageFrom(error, "Não foi possível enviar a imagem."));
+    } finally {
+      setSaving(null);
+    }
   }
 
   async function removeMedia(item: MediaRow) {
@@ -289,6 +362,12 @@ function AdminPanel() {
   function updateBlock(id: string, text: string) {
     setData((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? { ...block, draft_content: { ...block.draft_content, text } } : block) }));
   }
+  function updateBlockImage(id: string, image: MediaRow | null) {
+    setData((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? {
+      ...block,
+      draft_content: { ...block.draft_content, image_url: image?.public_url ?? null, image_alt: image?.alt_text ?? "" },
+    } : block) }));
+  }
   function updateButton(id: string, patch: Partial<ButtonRow>) {
     setData((current) => ({ ...current, buttons: current.buttons.map((button) => button.id === id ? { ...button, ...patch } : button) }));
   }
@@ -316,6 +395,7 @@ function AdminPanel() {
   }
 
   const activeLabel = navigation.find(([key]) => key === active)?.[1];
+  const imageLibrary = data.media.filter((item) => item.media_type === "image" && Boolean(item.public_url));
   return (
     <main className="min-h-screen bg-[#f5f3ef] text-[#162d3d]">
       <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
@@ -350,6 +430,10 @@ function AdminPanel() {
                   {blocks.map((block, blockIndex) => {
                     const value = String(block.draft_content.text ?? "");
                     const addingBelow = composer?.afterBlockKey === block.block_key;
+                    const pairedImagePath = pairedImagePathForBlock(block);
+                    const pairedMedia = data.media.find((item) => item.path === pairedImagePath) ?? null;
+                    const selectedImageUrl = String(block.draft_content.image_url ?? pairedMedia?.public_url ?? "");
+                    const canEditImage = Boolean(pairedImagePath || (block.style.dynamic === true && supportsPairedImages(section.section_key)));
                     const inputClassName = "w-full rounded-xl border border-[#d9d3c8] bg-white px-3 outline-none transition focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15";
                     return <div key={block.id} className="rounded-xl border border-[#e7e1d8] bg-[#fcfbf9] p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -362,12 +446,20 @@ function AdminPanel() {
                       {block.type === "textarea" || value.length > 90
                         ? <textarea aria-label={`Texto ${blockIndex + 1}`} value={value} onChange={(event) => updateBlock(block.id, event.target.value)} className={`${inputClassName} min-h-24 resize-y py-3`} />
                         : <input aria-label={`Texto ${blockIndex + 1}`} value={value} onChange={(event) => updateBlock(block.id, event.target.value)} className={`${inputClassName} h-11`} />}
-                      {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
+                      {canEditImage && <ImageField
+                        images={imageLibrary}
+                        value={selectedImageUrl}
+                        label="Imagem correspondente"
+                        onChange={(url) => updateBlockImage(block.id, imageLibrary.find((item) => item.public_url === url) ?? null)}
+                        onUpload={pairedMedia ? (file) => void replaceMedia(pairedMedia, file, block.id) : undefined}
+                        busy={Boolean(pairedMedia && saving === `media-upload-${pairedMedia.id}`)}
+                      />}
+                      {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
                     </div>;
                   })}
                   {!blocks.length && allSectionBlocks.length > 0 && <Empty text="Nenhum texto desta seção corresponde à busca." />}
                   {!allSectionBlocks.length && !composer && <><Empty text="Esta seção ainda não tem textos." /><button type="button" onClick={() => startAddingText(section, null)} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> Adicionar primeiro texto</button></>}
-                  {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
+                  {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
                   {allSectionBlocks.length > 0 && <div className="flex justify-end border-t border-[#eee9e1] pt-4"><SaveButton busy={saving === `section-${section.id}`} onClick={() => void saveTextSection(section, allSectionBlocks)} label="Salvar alterações" /></div>}
                 </div>
               </details>;
@@ -418,10 +510,41 @@ function Metric({ label, value }: { label: string; value: number }) { return <di
 function Shortcut({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) { return <button onClick={onClick} className="flex items-center gap-3 rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4 text-left font-semibold transition hover:border-[#d58b43] hover:bg-[#fffaf2]"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e7eef2] text-[#163d5a] [&>svg]:h-4 [&>svg]:w-4">{icon}</span>{label}</button>; }
 function Help({ text }: { text: string }) { return <div className="rounded-2xl border border-[#cbdce6] bg-[#edf5f9] p-4 text-sm text-[#274b60]">{text}</div>; }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-[#d9d3c8] bg-[#faf9f6] p-6 text-center text-sm text-[#778188]">{text}</div>; }
-function NewTextBox({ value, onChange, onAdd, onCancel, busy }: { value: string; onChange: (value: string) => void; onAdd: () => void; onCancel: () => void; busy: boolean }) {
+function ImageField({ images, value, label, onChange, onUpload, busy = false }: {
+  images: MediaRow[];
+  value: string;
+  label: string;
+  onChange: (value: string) => void;
+  onUpload?: (file: File) => void;
+  busy?: boolean;
+}) {
+  const hasCurrentImage = Boolean(value && !images.some((image) => image.public_url === value));
+  return <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+    <label className="block min-w-0"><span className="text-sm font-semibold text-[#354b59]">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#d9d3c8] bg-white px-3 outline-none focus:border-[#d58b43]">
+      <option value="">{onUpload ? "Usar imagem original" : "Selecione uma imagem"}</option>
+      {hasCurrentImage && <option value={value}>Imagem atual</option>}
+      {images.map((image) => <option key={image.id} value={image.public_url ?? ""}>{image.label || image.alt_text || image.path}</option>)}
+    </select></label>
+    {onUpload && <label className={`mt-6 inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#b9cbd5] bg-white px-4 text-sm font-semibold text-[#163d5a] transition hover:bg-[#edf5f9] ${busy ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />{busy ? "Enviando…" : "Enviar nova foto"}<input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) onUpload(file); }} /></label>}
+    {value && <img src={value} alt="Prévia da imagem correspondente" className="col-span-full h-32 w-48 rounded-xl border border-[#e7e1d8] object-cover" loading="lazy" />}
+  </div>;
+}
+
+function NewTextBox({ value, onChange, imageUrl, images, showImagePicker, onImageChange, onAdd, onCancel, busy }: {
+  value: string;
+  onChange: (value: string) => void;
+  imageUrl: string;
+  images: MediaRow[];
+  showImagePicker: boolean;
+  onImageChange: (image: MediaRow | null) => void;
+  onAdd: () => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
   return <div className="mt-4 rounded-xl border-2 border-dashed border-[#b9cbd5] bg-[#f1f7fa] p-4">
     <label className="block"><span className="text-sm font-semibold text-[#354b59]">Novo texto</span><textarea autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Digite aqui..." className="mt-2 min-h-24 w-full resize-y rounded-xl border border-[#cbd8df] bg-white px-3 py-3 outline-none focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15" /></label>
-    <p className="mt-2 text-xs text-[#657780]">Ele será criado como um bloco separado logo abaixo, com o mesmo visual.</p>
+    {showImagePicker && <ImageField images={images} value={imageUrl} label="Imagem correspondente" onChange={(url) => onImageChange(images.find((image) => image.public_url === url) ?? null)} />}
+    <p className="mt-2 text-xs text-[#657780]">Ele será criado como um item próprio logo abaixo, com a imagem escolhida quando a seção tiver fotos.</p>
     <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={onAdd} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Adicionar texto</button><button type="button" onClick={onCancel} disabled={busy} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60">Cancelar</button></div>
   </div>;
 }
