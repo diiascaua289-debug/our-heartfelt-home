@@ -369,13 +369,13 @@ function AdminPanel() {
       draft_content: { ...block.draft_content, image_url: image?.public_url ?? null, image_alt: image?.alt_text ?? "" },
     } : block) }));
   }
-  async function uploadContentImage(file: File, onUploaded: (image: UploadedImage) => void) {
+  async function uploadContentImage(file: File, onUploaded: (image: UploadedImage) => void | Promise<void>) {
     if (!token) return;
     setSaving("content-image-upload");
     setFeedback("Enviando imagem...");
     try {
       const image = await uploadNewAdminImage<UploadedImage>(file, token);
-      onUploaded(image);
+      await onUploaded(image);
       setFeedback("Imagem enviada e vinculada ao texto");
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível enviar a imagem."));
@@ -466,7 +466,16 @@ function AdminPanel() {
                         value={selectedImageUrl}
                         label="Imagem correspondente"
                         onChange={(url) => updateBlockImage(block.id, imageLibrary.find((item) => item.public_url === url) ?? null)}
-                        onUpload={(file) => void uploadContentImage(file, (image) => updateBlockImage(block.id, image))}
+                        onUpload={(file) => void uploadContentImage(file, async (image) => {
+                          const content = { ...block.draft_content, image_url: image.public_url, image_alt: image.alt_text || block.draft_content.text || "" };
+                          updateBlockImage(block.id, image);
+                          if (token) await adminTable("content_blocks", {
+                            method: "PATCH",
+                            token,
+                            query: `?id=eq.${block.id}`,
+                            body: { draft_content: content, published_content: content },
+                          });
+                        })}
                         busy={saving === "content-image-upload"}
                       />}
                       {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onImageUpload={(file) => void uploadContentImage(file, (image) => setTextComposer((current) => current?.sectionId === section.id ? { ...current, imageUrl: image.public_url, imageAlt: image.alt_text } : current))} uploadBusy={saving === "content-image-upload"} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
@@ -475,7 +484,7 @@ function AdminPanel() {
                   {!blocks.length && allSectionBlocks.length > 0 && <Empty text="Nenhum texto desta seção corresponde à busca." />}
                   {!allSectionBlocks.length && !composer && <><Empty text="Esta seção ainda não tem textos." /><button type="button" onClick={() => startAddingText(section, null)} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> Adicionar primeiro texto</button></>}
                   {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onImageUpload={(file) => void uploadContentImage(file, (image) => setTextComposer((current) => current?.sectionId === section.id ? { ...current, imageUrl: image.public_url, imageAlt: image.alt_text } : current))} uploadBusy={saving === "content-image-upload"} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
-                  {allSectionBlocks.length > 0 && <div className="flex justify-end border-t border-[#eee9e1] pt-4"><SaveButton busy={saving === `section-${section.id}`} onClick={() => void saveTextSection(section, allSectionBlocks)} label="Salvar alterações" /></div>}
+                  {allSectionBlocks.length > 0 && <div className="flex justify-end border-t border-[#eee9e1] pt-4"><SaveButton busy={saving === `section-${section.id}` || saving === `text-add-${section.id}`} onClick={() => composer ? void addTextBlock(section) : void saveTextSection(section, allSectionBlocks)} label={composer ? "Adicionar novo texto" : "Salvar alterações"} /></div>}
                 </div>
               </details>;
             })}
