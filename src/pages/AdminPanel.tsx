@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   adminRpc, adminTable, clearAdminToken, getStoredAdminToken, loginAdmin, storeAdminToken,
-  uploadAdminMedia,
+  uploadAdminMedia, uploadNewAdminImage,
 } from "@/lib/adminApi";
 
 type JsonMap = Record<string, unknown>;
@@ -15,6 +15,7 @@ type SectionRow = { id: string; section_key: string; name: string; sort_order: n
 type ContentBlockRow = { id: string; section_id: string | null; block_key: string; type: string; label: string | null; sort_order: number; is_active: boolean; draft_content: JsonMap; style: JsonMap };
 type ButtonRow = { id: string; section_id: string | null; button_key: string; label: string; destination_type: "url" | "anchor" | "whatsapp" | "page" | "email" | "phone"; destination_value: string | null; open_new_tab: boolean; is_active: boolean; sort_order: number };
 type MediaRow = { id: string; bucket: string; path: string; public_url: string | null; media_type: "image" | "video" | "logo" | "favicon" | "og_image" | "file"; label: string | null; alt_text: string | null; caption: string | null; is_active: boolean };
+type UploadedImage = { public_url: string; path: string; media_type: "image"; label: string; alt_text: string };
 type FormField = { name?: string; label?: string; type?: string; required?: boolean };
 type FormRow = { id: string; name: string; form_key: string; fields: FormField[]; success_message: string; is_active: boolean };
 type Lead = { id: string; name: string | null; whatsapp: string | null; email: string | null; status: string; source: string | null; created_at: string };
@@ -362,11 +363,25 @@ function AdminPanel() {
   function updateBlock(id: string, text: string) {
     setData((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? { ...block, draft_content: { ...block.draft_content, text } } : block) }));
   }
-  function updateBlockImage(id: string, image: MediaRow | null) {
+  function updateBlockImage(id: string, image: Pick<MediaRow, "public_url" | "alt_text"> | null) {
     setData((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? {
       ...block,
       draft_content: { ...block.draft_content, image_url: image?.public_url ?? null, image_alt: image?.alt_text ?? "" },
     } : block) }));
+  }
+  async function uploadContentImage(file: File, onUploaded: (image: UploadedImage) => void) {
+    if (!token) return;
+    setSaving("content-image-upload");
+    setFeedback("Enviando imagem...");
+    try {
+      const image = await uploadNewAdminImage<UploadedImage>(file, token);
+      onUploaded(image);
+      setFeedback("Imagem enviada e vinculada ao texto");
+    } catch (error) {
+      setFeedback(messageFrom(error, "Não foi possível enviar a imagem."));
+    } finally {
+      setSaving(null);
+    }
   }
   function updateButton(id: string, patch: Partial<ButtonRow>) {
     setData((current) => ({ ...current, buttons: current.buttons.map((button) => button.id === id ? { ...button, ...patch } : button) }));
@@ -451,15 +466,15 @@ function AdminPanel() {
                         value={selectedImageUrl}
                         label="Imagem correspondente"
                         onChange={(url) => updateBlockImage(block.id, imageLibrary.find((item) => item.public_url === url) ?? null)}
-                        onUpload={pairedMedia ? (file) => void replaceMedia(pairedMedia, file, block.id) : undefined}
-                        busy={Boolean(pairedMedia && saving === `media-upload-${pairedMedia.id}`)}
+                        onUpload={(file) => void uploadContentImage(file, (image) => updateBlockImage(block.id, image))}
+                        busy={saving === "content-image-upload"}
                       />}
-                      {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
+                      {addingBelow && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onImageUpload={(file) => void uploadContentImage(file, (image) => setTextComposer((current) => current?.sectionId === section.id ? { ...current, imageUrl: image.public_url, imageAlt: image.alt_text } : current))} uploadBusy={saving === "content-image-upload"} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
                     </div>;
                   })}
                   {!blocks.length && allSectionBlocks.length > 0 && <Empty text="Nenhum texto desta seção corresponde à busca." />}
                   {!allSectionBlocks.length && !composer && <><Empty text="Esta seção ainda não tem textos." /><button type="button" onClick={() => startAddingText(section, null)} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> Adicionar primeiro texto</button></>}
-                  {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
+                  {!allSectionBlocks.length && composer && <NewTextBox value={composer.text} onChange={(text) => setTextComposer({ ...composer, text })} imageUrl={composer.imageUrl} images={imageLibrary} showImagePicker={supportsPairedImages(section.section_key)} onImageChange={(image) => setTextComposer({ ...composer, imageUrl: image?.public_url ?? "", imageAlt: image?.alt_text ?? "" })} onImageUpload={(file) => void uploadContentImage(file, (image) => setTextComposer((current) => current?.sectionId === section.id ? { ...current, imageUrl: image.public_url, imageAlt: image.alt_text } : current))} uploadBusy={saving === "content-image-upload"} onAdd={() => void addTextBlock(section)} onCancel={() => setTextComposer(null)} busy={saving === `text-add-${section.id}`} />}
                   {allSectionBlocks.length > 0 && <div className="flex justify-end border-t border-[#eee9e1] pt-4"><SaveButton busy={saving === `section-${section.id}`} onClick={() => void saveTextSection(section, allSectionBlocks)} label="Salvar alterações" /></div>}
                 </div>
               </details>;
@@ -530,20 +545,22 @@ function ImageField({ images, value, label, onChange, onUpload, busy = false }: 
   </div>;
 }
 
-function NewTextBox({ value, onChange, imageUrl, images, showImagePicker, onImageChange, onAdd, onCancel, busy }: {
+function NewTextBox({ value, onChange, imageUrl, images, showImagePicker, onImageChange, onImageUpload, uploadBusy, onAdd, onCancel, busy }: {
   value: string;
   onChange: (value: string) => void;
   imageUrl: string;
   images: MediaRow[];
   showImagePicker: boolean;
   onImageChange: (image: MediaRow | null) => void;
+  onImageUpload: (file: File) => void;
+  uploadBusy: boolean;
   onAdd: () => void;
   onCancel: () => void;
   busy: boolean;
 }) {
   return <div className="mt-4 rounded-xl border-2 border-dashed border-[#b9cbd5] bg-[#f1f7fa] p-4">
     <label className="block"><span className="text-sm font-semibold text-[#354b59]">Novo texto</span><textarea autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Digite aqui..." className="mt-2 min-h-24 w-full resize-y rounded-xl border border-[#cbd8df] bg-white px-3 py-3 outline-none focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15" /></label>
-    {showImagePicker && <ImageField images={images} value={imageUrl} label="Imagem correspondente" onChange={(url) => onImageChange(images.find((image) => image.public_url === url) ?? null)} />}
+    {showImagePicker && <ImageField images={images} value={imageUrl} label="Imagem correspondente" onChange={(url) => onImageChange(images.find((image) => image.public_url === url) ?? null)} onUpload={onImageUpload} busy={uploadBusy} />}
     <p className="mt-2 text-xs text-[#657780]">Ele será criado como um item próprio logo abaixo, com a imagem escolhida quando a seção tiver fotos.</p>
     <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={onAdd} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Adicionar texto</button><button type="button" onClick={onCancel} disabled={busy} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60">Cancelar</button></div>
   </div>;
