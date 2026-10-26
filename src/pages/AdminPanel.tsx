@@ -40,9 +40,9 @@ type TextComposer = { sectionId: string; text: string; imageUrl: string; imageAl
 
 const pairedImageSections = new Set(["hoteis", "galeria", "pacotes"]);
 const inclusionDefaults = [
-  { key: "cms-text-incluso-020", text: "Reservas de hotéis", order: 20 },
-  { key: "cms-text-incluso-021", text: "Reservas de cruzeiros", order: 21 },
-  { key: "cms-text-incluso-022", text: "Passagens aéreas", order: 22 },
+  { key: "cms-text-incluso-020", text: "Reservas de hotéis", order: 13 },
+  { key: "cms-text-incluso-021", text: "Reservas de cruzeiros", order: 14 },
+  { key: "cms-text-incluso-022", text: "Passagens aéreas", order: 15 },
 ];
 
 function sectionNameFromKey(sectionKey: string) {
