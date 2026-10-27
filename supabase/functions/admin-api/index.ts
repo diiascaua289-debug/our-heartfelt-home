@@ -2,6 +2,8 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-token",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+  "Cache-Control": "no-store",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -152,7 +154,7 @@ Deno.serve(async (req) => {
     }
 
     const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedObjectPath}`;
-    const metadata = { ...(media.metadata || {}), storage_path: objectPath, original_name: fileName, content_type: contentType, size: contentLength };
+    const metadata = { ...(media.metadata || {}), storage_path: objectPath, original_name: fileName, content_type: contentType, size: contentLength, removed: false, removed_at: null };
     const updateRes = await supabaseFetch(`/rest/v1/media?id=eq.${encodeURIComponent(mediaId)}`, {
       method: "PATCH",
       headers: { Prefer: "return=representation" },

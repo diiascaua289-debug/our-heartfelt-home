@@ -1,6 +1,21 @@
 const SUPABASE_URL = "https://nybuomuvxpppxvpanjlt.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_7a39yL1brl5l9wxpqVFv-Q_2Sthv8ow";
 const ADMIN_API_URL = `${SUPABASE_URL}/functions/v1/admin-api`;
+const ADMIN_TOKEN_KEY = "admin-session-token";
+const ADMIN_BROWSER_KEY = "admin-browser-id";
+export const ADMIN_SESSION_EXPIRED_EVENT = "admin-session-expired";
+
+export class AdminApiError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status: number, code = message) {
+    super(message);
+    this.name = "AdminApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
 
 export type AdminTable =
   | "admin_settings"
@@ -29,6 +44,7 @@ type RequestOptions = {
 async function request(path: string, options: RequestOptions = {}) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    apikey: SUPABASE_PUBLISHABLE_KEY,
   };
 
   if (options.token) headers["x-admin-token"] = options.token;
@@ -37,25 +53,46 @@ async function request(path: string, options: RequestOptions = {}) {
     method: options.method ?? "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
+    cache: "no-store",
   });
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || "Não foi possível completar a ação.");
+    const code = String(payload?.error || "request_failed");
+    if (response.status === 401 && path !== "/login") expireAdminSession();
+    throw new AdminApiError(code, response.status, code);
   }
   return payload;
 }
 
 export function getStoredAdminToken() {
-  return window.sessionStorage.getItem("admin-session-token");
+  const token = window.localStorage.getItem(ADMIN_TOKEN_KEY) || window.sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  if (token && !window.localStorage.getItem(ADMIN_TOKEN_KEY)) window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  return token;
 }
 
 export function storeAdminToken(token: string) {
-  window.sessionStorage.setItem("admin-session-token", token);
+  window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
 export function clearAdminToken() {
-  window.sessionStorage.removeItem("admin-session-token");
+  window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+  window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+function expireAdminSession() {
+  clearAdminToken();
+  window.dispatchEvent(new Event(ADMIN_SESSION_EXPIRED_EVENT));
+}
+
+function browserAttemptKey() {
+  let browserId = window.localStorage.getItem(ADMIN_BROWSER_KEY);
+  if (!browserId) {
+    browserId = crypto.randomUUID();
+    window.localStorage.setItem(ADMIN_BROWSER_KEY, browserId);
+  }
+  return browserId;
 }
 
 export async function loginAdmin(password: string) {
@@ -63,7 +100,7 @@ export async function loginAdmin(password: string) {
     method: "POST",
     body: {
       password,
-      attemptKey: window.navigator.userAgent.slice(0, 120),
+      attemptKey: browserAttemptKey(),
     },
   });
 }
@@ -77,14 +114,18 @@ export async function uploadAdminMedia<T>(mediaId: string, file: File, token: st
     method: "POST",
     headers: {
       "x-admin-token": token,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
       "Content-Type": file.type || "application/octet-stream",
     },
     body: file,
+    cache: "no-store",
   });
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || "Não foi possível enviar o arquivo.");
+    const code = String(payload?.error || "upload_failed");
+    if (response.status === 401) expireAdminSession();
+    throw new AdminApiError(code, response.status, code);
   }
   return payload as T;
 }
@@ -94,14 +135,18 @@ export async function uploadNewAdminImage<T>(file: File, token: string) {
     method: "POST",
     headers: {
       "x-admin-token": token,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
       "Content-Type": file.type || "application/octet-stream",
     },
     body: file,
+    cache: "no-store",
   });
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || "Não foi possível enviar a imagem.");
+    const code = String(payload?.error || "upload_failed");
+    if (response.status === 401) expireAdminSession();
+    throw new AdminApiError(code, response.status, code);
   }
   return payload as T;
 }
