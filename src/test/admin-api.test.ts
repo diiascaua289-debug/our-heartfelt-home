@@ -4,6 +4,7 @@ import {
   adminTable,
   getStoredAdminToken,
   loginAdmin,
+  uploadNewAdminMedia,
 } from "@/lib/adminApi";
 
 beforeEach(() => {
@@ -53,5 +54,22 @@ describe("admin session fallback", () => {
     expect(window.localStorage.getItem("admin-session-token")).toBeNull();
     expect(expired).toHaveBeenCalledOnce();
     window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, expired);
+  });
+
+  it("uploads a new image or video with its display name", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "new-media", media_type: "video" }),
+    } as Response));
+    window.fetch = fetchMock;
+    const file = new File(["video"], "deserto.mp4", { type: "video/mp4" });
+
+    await uploadNewAdminMedia(file, "Deserto ao entardecer", "valid-token");
+
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain("/media-add-upload?");
+    expect(requestUrl).toContain("label=Deserto+ao+entardecer");
+    expect(fetchMock.mock.calls[0][1]?.body).toBe(file);
   });
 });

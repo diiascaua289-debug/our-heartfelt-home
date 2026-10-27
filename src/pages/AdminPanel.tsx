@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   ADMIN_SESSION_EXPIRED_EVENT, adminRpc, adminTable, clearAdminToken, getStoredAdminToken, loginAdmin, storeAdminToken,
-  uploadAdminMedia, uploadNewAdminImage,
+  uploadAdminMedia, uploadNewAdminImage, uploadNewAdminMedia,
 } from "@/lib/adminApi";
 
 type JsonMap = Record<string, unknown>;
@@ -37,6 +37,7 @@ const navigation = [
 type PageKey = (typeof navigation)[number][0];
 const leadStatuses = ["Novo", "Em contato", "Respondido", "Qualificado", "Convertido", "Arquivado"];
 type TextComposer = { sectionId: string; text: string; imageUrl: string; imageAlt: string; afterBlockKey: string | null };
+type NewMediaForm = { open: boolean; label: string; file: File | null };
 
 const pairedImageSections = new Set(["hoteis", "galeria", "pacotes"]);
 const inclusionDefaults = [
@@ -81,6 +82,7 @@ function AdminPanel() {
   const [search, setSearch] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
   const [textComposer, setTextComposer] = useState<TextComposer | null>(null);
+  const [newMedia, setNewMedia] = useState<NewMediaForm>({ open: false, label: "", file: null });
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [security, setSecurity] = useState({ recoveryEmail: "", currentPassword: "", newPassword: "", confirmPassword: "" });
 
@@ -362,6 +364,30 @@ function AdminPanel() {
     }), "Mídia removida do site");
   }
 
+  async function addNewMedia() {
+    if (!token || !newMedia.file) {
+      setFeedback("Escolha uma imagem ou vídeo para enviar.");
+      return;
+    }
+    if (newMedia.file.size > 50 * 1024 * 1024) {
+      setFeedback("O arquivo deve ter no máximo 50 MB.");
+      return;
+    }
+    const label = newMedia.label.trim() || newMedia.file.name.replace(/\.[^.]+$/, "");
+    setSaving("media-add");
+    setFeedback("Enviando nova mídia...");
+    try {
+      const created = await uploadNewAdminMedia<MediaRow>(newMedia.file, label, token);
+      setData((current) => ({ ...current, media: [...current.media, created] }));
+      setNewMedia({ open: false, label: "", file: null });
+      setFeedback(created.media_type === "video" ? "Vídeo adicionado à Videoteca" : "Imagem adicionada à Galeria");
+    } catch (error) {
+      setFeedback(messageFrom(error, "Não foi possível adicionar a mídia."));
+    } finally {
+      setSaving(null);
+    }
+  }
+
   async function saveSecurity(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
@@ -512,7 +538,19 @@ function AdminPanel() {
 
           {active === "botoes" && <div className="space-y-5"><Help text="Altere o texto e o destino de cada botão. Os botões de WhatsApp usam o número definido na área WhatsApp." />{buttonsBySection.map(({ section, buttons }) => <Panel key={section.id} title={section.name} subtitle={`${buttons.length} botões ou links`}><div className="space-y-4">{buttons.map((button) => <div key={button.id} className="rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Texto que aparece" value={button.label} onChange={(value) => updateButton(button.id, { label: value })} /><SelectField label="Tipo de destino" value={button.destination_type} onChange={(value) => updateButton(button.id, { destination_type: value as ButtonRow["destination_type"] })} options={[["whatsapp", "WhatsApp"], ["anchor", "Seção do site"], ["url", "Outro link"], ["email", "E-mail"], ["phone", "Telefone"], ["page", "Página"]]} /></div>{button.destination_type !== "whatsapp" && <Field label="Link ou destino" value={button.destination_value ?? ""} onChange={(value) => updateButton(button.id, { destination_value: value })} />}<div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Toggle label="Abrir em nova aba" checked={button.open_new_tab} onChange={(checked) => updateButton(button.id, { open_new_tab: checked })} /><SaveButton compact busy={saving === `button-${button.id}`} onClick={() => token && void saveAction(`button-${button.id}`, () => adminTable("buttons", { method: "PATCH", token, query: `?id=eq.${button.id}`, body: { label: button.label, destination_type: button.destination_type, destination_value: button.destination_value, open_new_tab: button.open_new_tab, is_active: button.is_active } }))} label="Salvar botão" /></div></div>)}</div></Panel>)}</div>}
 
-          {active === "imagens" && <div className="space-y-5"><Help text="As mídias estão separadas pelo lugar onde aparecem no site. Trocar mantém a posição; remover tira somente aquela mídia." />{mediaBySection.map(({ section, items }) => <details key={section} className="group rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">{section}</h2><p className="text-sm text-[#778188]">{items.length} {items.length === 1 ? "mídia" : "mídias"}</p></div><ChevronDown className="h-5 w-5 transition group-open:rotate-180" /></summary><div className="grid gap-4 border-t border-[#eee9e1] p-4 sm:grid-cols-2 xl:grid-cols-3">{items.map((item) => { const changing = saving === `media-upload-${item.id}`; const removing = saving === `media-remove-${item.id}`; return <article key={item.id} className="group/card overflow-hidden rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><div className="relative aspect-[4/3] overflow-hidden bg-[#e9e5de]">{item.media_type === "video" ? <video src={item.public_url ?? ""} controls preload="metadata" className="h-full w-full object-cover" /> : <img src={item.public_url ?? ""} alt={item.alt_text || item.label || "Imagem do site"} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover/card:scale-[1.02]" />}{(changing || removing) && <div className="absolute inset-0 grid place-items-center bg-[#102f45]/65 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>}</div><div className="p-3"><p className="mb-3 truncate text-sm font-semibold">{item.label || (item.media_type === "video" ? "Vídeo" : "Imagem")}</p><div className="flex items-center gap-3"><label className={`flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#163d5a] px-4 text-sm font-semibold text-white transition hover:bg-[#0e3049] ${(changing || removing) ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />Trocar<input type="file" className="sr-only" disabled={changing || removing} accept={item.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp,image/gif,image/svg+xml"} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void replaceMedia(item, file); }} /></label><button type="button" disabled={changing || removing} onClick={() => void removeMedia(item)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-red-200 text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${item.label || "mídia"}`} title="Remover"><Trash2 className="h-5 w-5" /></button></div></div></article>; })}</div></details>)}{!mediaBySection.length && <Empty text="Nenhuma imagem ou vídeo cadastrado." />}</div>}
+          {active === "imagens" && <div className="space-y-5">
+            <Panel title="Adicionar imagem ou vídeo" subtitle="Imagens novas entram na Galeria. Vídeos novos entram na Videoteca.">
+              {!newMedia.open ? <button type="button" onClick={() => setNewMedia({ open: true, label: "", file: null })} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-5 py-3 font-semibold text-white transition hover:bg-[#0e3049]"><Plus className="h-4 w-4" /> Adicionar imagem ou vídeo</button> : <div className="space-y-4 rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4">
+                <Field label="Nome da mídia" value={newMedia.label} onChange={(label) => setNewMedia((current) => ({ ...current, label }))} />
+                <label className="block"><span className="text-sm font-semibold text-[#354b59]">Arquivo</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,video/mp4,video/webm" onChange={(event) => { const file = event.target.files?.[0] ?? null; setNewMedia((current) => ({ ...current, file, label: current.label || file?.name.replace(/\.[^.]+$/, "") || "" })); }} className="mt-2 block w-full rounded-xl border border-[#d9d3c8] bg-white px-3 py-2.5 text-sm" /></label>
+                {newMedia.file && <p className="text-sm text-[#65727a]">{newMedia.file.type.startsWith("video/") ? "Será adicionado à Videoteca" : "Será adicionada à Galeria"} · {(newMedia.file.size / 1024 / 1024).toFixed(1)} MB</p>}
+                <div className="flex flex-wrap gap-2"><button type="button" disabled={!newMedia.file || saving === "media-add"} onClick={() => void addNewMedia()} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving === "media-add" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Fazer upload</button><button type="button" disabled={saving === "media-add"} onClick={() => setNewMedia({ open: false, label: "", file: null })} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Cancelar</button></div>
+              </div>}
+            </Panel>
+            <Help text="As mídias estão separadas pelo lugar onde aparecem no site. Trocar mantém a posição; remover tira somente aquela mídia." />
+            {mediaBySection.map(({ section, items }) => <details key={section} className="group rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">{section}</h2><p className="text-sm text-[#778188]">{items.length} {items.length === 1 ? "mídia" : "mídias"}</p></div><ChevronDown className="h-5 w-5 transition group-open:rotate-180" /></summary><div className="grid gap-4 border-t border-[#eee9e1] p-4 sm:grid-cols-2 xl:grid-cols-3">{items.map((item) => { const changing = saving === `media-upload-${item.id}`; const removing = saving === `media-remove-${item.id}`; return <article key={item.id} className="group/card overflow-hidden rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><div className="relative aspect-[4/3] overflow-hidden bg-[#e9e5de]">{item.media_type === "video" ? <video src={item.public_url ?? ""} controls preload="metadata" className="h-full w-full object-cover" /> : <img src={item.public_url ?? ""} alt={item.alt_text || item.label || "Imagem do site"} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover/card:scale-[1.02]" />}{(changing || removing) && <div className="absolute inset-0 grid place-items-center bg-[#102f45]/65 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>}</div><div className="p-3"><p className="mb-3 truncate text-sm font-semibold">{item.label || (item.media_type === "video" ? "Vídeo" : "Imagem")}</p><div className="flex items-center gap-3"><label className={`flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#163d5a] px-4 text-sm font-semibold text-white transition hover:bg-[#0e3049] ${(changing || removing) ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />Trocar<input type="file" className="sr-only" disabled={changing || removing} accept={item.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp,image/gif,image/svg+xml"} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void replaceMedia(item, file); }} /></label><button type="button" disabled={changing || removing} onClick={() => void removeMedia(item)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-red-200 text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${item.label || "mídia"}`} title="Remover"><Trash2 className="h-5 w-5" /></button></div></div></article>; })}</div></details>)}
+            {!mediaBySection.length && <Empty text="Nenhuma imagem ou vídeo cadastrado." />}
+          </div>}
 
           {active === "formulario" && <div className="space-y-5">{data.forms.map((form) => <Panel key={form.id} title={form.name} subtitle="Campos recebidos dos clientes"><div className="grid gap-4 md:grid-cols-2"><Field label="Nome do formulário" value={form.name} onChange={(value) => updateForm(form.id, { name: value })} /><Toggle label="Formulário ativo" checked={form.is_active} onChange={(checked) => updateForm(form.id, { is_active: checked })} /></div><TextAreaField label="Mensagem depois do envio" value={form.success_message} onChange={(value) => updateForm(form.id, { success_message: value })} /><div className="space-y-3"><p className="text-sm font-semibold">Campos do formulário</p>{form.fields.map((field, index) => <div key={`${field.name}-${index}`} className="grid gap-3 rounded-xl bg-[#f7f5f1] p-3 md:grid-cols-[1fr_160px_auto]"><Field label={`Campo ${index + 1}`} value={field.label ?? ""} onChange={(value) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: value } : item) })} /><SelectField label="Tipo" value={field.type ?? "text"} onChange={(value) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, type: value } : item) })} options={[["text", "Texto"], ["tel", "Telefone"], ["email", "E-mail"], ["textarea", "Texto longo"]]} /><Toggle label="Obrigatório" checked={Boolean(field.required)} onChange={(checked) => updateForm(form.id, { fields: form.fields.map((item, itemIndex) => itemIndex === index ? { ...item, required: checked } : item) })} /></div>)}</div><SaveButton busy={saving === `form-${form.id}`} onClick={() => token && void saveAction(`form-${form.id}`, () => adminTable("forms", { method: "PATCH", token, query: `?id=eq.${form.id}`, body: { name: form.name, fields: form.fields, success_message: form.success_message, is_active: form.is_active } }))} label="Salvar formulário" /></Panel>)}{!data.forms.length && <Empty text="Nenhum formulário cadastrado." />}</div>}
 

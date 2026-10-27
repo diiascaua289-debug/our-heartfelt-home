@@ -24,6 +24,8 @@ describe("CMS text runtime", () => {
           <div class="inc-item"><span class="inc-icon">✓</span><span data-cms-key="cms-text-incluso-005">Guia local</span></div>
         </div>
       </section>
+      <section data-cms-section="galeria"><div class="gallery-masonry"><div class="gallery-item"><img data-cms-media="cms-media-galeria-01" src="/original.jpg"><div class="gallery-overlay"><span>Original</span></div></div></div></section>
+      <section data-cms-section="videoteca"><div id="videoCarousel"><div class="video-slide"><video><source data-cms-media="cms-media-videoteca-01" src="/original.mp4"></video></div></div></section>
       <footer data-cms-section="contato">
         <p class="footer-desc"><span data-cms-key="cms-text-footer-copy">Rodapé original</span></p>
       </footer>
@@ -74,10 +76,14 @@ describe("CMS text runtime", () => {
 
     window.fetch = vi.fn(async (request: RequestInfo | URL) => {
       const url = String(request);
-      const data = url.includes("/content_blocks?") ? blocks : [];
+      const data = url.includes("/content_blocks?") ? blocks : url.includes("/media?") ? [
+        { path: "cms-media-user-image", public_url: "/nova.jpg", label: "Nova foto", alt_text: "Nova foto", media_type: "image", metadata: { dynamic: true, section_key: "galeria" }, is_active: true },
+        { path: "cms-media-user-video", public_url: "/novo.mp4", label: "Novo vídeo", alt_text: "Novo vídeo", media_type: "video", metadata: { dynamic: true, section_key: "videoteca", content_type: "video/mp4" }, is_active: true },
+      ] : [];
       return { ok: true, json: async () => data } as Response;
     });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
 
     window.eval(runtimeScript!);
     await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -96,5 +102,11 @@ describe("CMS text runtime", () => {
     const footerText = document.querySelector("footer p.cms-added-text");
     expect(footerText).toHaveClass("footer-desc");
     expect(footerText).toHaveTextContent("Novo texto do rodapé");
+    const addedImage = document.querySelector("[data-cms-media='cms-media-user-image']") as HTMLImageElement;
+    expect(addedImage).toHaveAttribute("src", "/nova.jpg");
+    expect(addedImage.closest(".gallery-item")).toHaveTextContent("Nova foto");
+    const addedVideo = document.querySelector("[data-cms-media='cms-media-user-video']") as HTMLSourceElement;
+    expect(addedVideo).toHaveAttribute("src", "/novo.mp4");
+    expect(addedVideo.closest(".video-slide")?.parentElement).toHaveAttribute("id", "videoCarousel");
   });
 });

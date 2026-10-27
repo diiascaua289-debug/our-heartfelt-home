@@ -151,6 +151,28 @@ export async function uploadNewAdminImage<T>(file: File, token: string) {
   return payload as T;
 }
 
+export async function uploadNewAdminMedia<T>(file: File, label: string, token: string) {
+  const params = new URLSearchParams({ filename: file.name, label });
+  const response = await fetch(`${ADMIN_API_URL}/media-add-upload?${params}`, {
+    method: "POST",
+    headers: {
+      "x-admin-token": token,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+    cache: "no-store",
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = String(payload?.error || "upload_failed");
+    if (response.status === 401) expireAdminSession();
+    throw new AdminApiError(code, response.status, code);
+  }
+  return payload as T;
+}
+
 export async function adminRpc<T>(name: "admin_change_password" | "admin_save_recovery_email", token: string, body: unknown) {
   return request(`/rpc/${name}`, {
     method: "POST",
