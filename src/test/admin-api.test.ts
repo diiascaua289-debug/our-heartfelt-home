@@ -65,11 +65,13 @@ describe("admin session fallback", () => {
     window.fetch = fetchMock;
     const file = new File(["video"], "deserto.mp4", { type: "video/mp4" });
 
-    await uploadNewAdminMedia(file, "Deserto ao entardecer", "valid-token");
+    await uploadNewAdminMedia(file, "Deserto ao entardecer", "valid-token", "sobre", "Vídeo do deserto");
 
     const requestUrl = String(fetchMock.mock.calls[0][0]);
     expect(requestUrl).toContain("/media-add-upload?");
     expect(requestUrl).toContain("label=Deserto+ao+entardecer");
+    expect(requestUrl).toContain("section=sobre");
+    expect(requestUrl).toContain("alt=V%C3%ADdeo+do+deserto");
     expect(fetchMock.mock.calls[0][1]?.body).toBe(file);
   });
 });

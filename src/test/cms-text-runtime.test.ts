@@ -76,10 +76,13 @@ describe("CMS text runtime", () => {
 
     window.fetch = vi.fn(async (request: RequestInfo | URL) => {
       const url = String(request);
-      const data = url.includes("/content_blocks?") ? blocks : url.includes("/media?") ? [
+      const data = url.includes("/sections?") ? [
+        { section_key: "cms-user-test", name: "Experiência especial", sort_order: 18, is_active: true, published_data: { dynamic: true, eyebrow: "Descubra", title: "Uma nova experiência", description: "Conteúdo criado no painel", button_label: "Saiba mais", button_url: "#contato" } },
+      ] : url.includes("/content_blocks?") ? blocks : url.includes("/media?") ? [
         { path: "cms-media-user-image", public_url: "/nova.jpg", label: "Nova foto", alt_text: "Nova foto", media_type: "image", metadata: { dynamic: true, section_key: "galeria" }, is_active: true },
         { path: "cms-media-user-video", public_url: "/novo.mp4", label: "Novo vídeo", alt_text: "Novo vídeo", media_type: "video", metadata: { dynamic: true, section_key: "videoteca", content_type: "video/mp4" }, is_active: true },
-      ] : [];
+        { path: "cms-media-user-about", public_url: "/sobre-extra.jpg", label: "Foto adicional", alt_text: "Foto adicional", media_type: "image", metadata: { dynamic: true, section_key: "sobre" }, is_active: true },
+      ] : url.includes("/visual_identity?") ? [{ tokens: { orange: "#CC5500" } }] : [];
       return { ok: true, json: async () => data } as Response;
     });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -108,5 +111,8 @@ describe("CMS text runtime", () => {
     const addedVideo = document.querySelector("[data-cms-media='cms-media-user-video']") as HTMLSourceElement;
     expect(addedVideo).toHaveAttribute("src", "/novo.mp4");
     expect(addedVideo.closest(".video-slide")?.parentElement).toHaveAttribute("id", "videoCarousel");
+    expect(document.documentElement.style.getPropertyValue("--orange")).toBe("#CC5500");
+    expect(document.querySelector("[data-cms-section='user-test']")).toHaveTextContent("Uma nova experiência");
+    expect(document.querySelector("[data-cms-media='cms-media-user-about']")).toHaveAttribute("src", "/sobre-extra.jpg");
   });
 });

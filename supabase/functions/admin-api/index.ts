@@ -205,12 +205,15 @@ Deno.serve(async (req) => {
     const contentLength = Number(req.headers.get("content-length") || 0);
     const fileName = (url.searchParams.get("filename") || "mídia").slice(0, 200);
     const label = (url.searchParams.get("label") || fileName.replace(/\.[^.]+$/, "")).trim().slice(0, 120) || "Nova mídia";
+    const altText = (url.searchParams.get("alt") || label).trim().slice(0, 240) || label;
     const extensionByType: Record<string, string> = {
       "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg",
       "video/mp4": "mp4", "video/webm": "webm",
     };
     const extension = extensionByType[contentType];
     const isVideo = contentType.startsWith("video/");
+    const requestedSection = (url.searchParams.get("section") || "galeria").trim().toLowerCase();
+    const sectionKey = isVideo ? "videoteca" : (/^[a-z0-9-]{1,80}$/.test(requestedSection) ? requestedSection : "galeria");
 
     if (!extension) return json({ error: "Escolha uma imagem ou vídeo MP4/WebM válido." }, 400);
     if (!req.body || contentLength <= 0) return json({ error: "Arquivo vazio." }, 400);
@@ -231,7 +234,7 @@ Deno.serve(async (req) => {
     }
 
     const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedObjectPath}`;
-    const mediaPath = `cms-media-user-${mediaId.replaceAll("-", "")}`;
+    const mediaPath = `cms-media-${sectionKey}-user-${mediaId.replaceAll("-", "")}`;
     const createRes = await supabaseFetch("/rest/v1/media", {
       method: "POST",
       headers: { Prefer: "return=representation" },
@@ -242,11 +245,12 @@ Deno.serve(async (req) => {
         public_url: publicUrl,
         media_type: isVideo ? "video" : "image",
         label,
-        alt_text: label,
+        alt_text: altText,
         is_active: true,
         metadata: {
           dynamic: true,
-          section_key: isVideo ? "videoteca" : "galeria",
+          section_key: sectionKey,
+          sort_order: Date.now(),
           storage_path: objectPath,
           original_name: fileName,
           content_type: contentType,

@@ -151,8 +151,8 @@ export async function uploadNewAdminImage<T>(file: File, token: string) {
   return payload as T;
 }
 
-export async function uploadNewAdminMedia<T>(file: File, label: string, token: string) {
-  const params = new URLSearchParams({ filename: file.name, label });
+export async function uploadNewAdminMedia<T>(file: File, label: string, token: string, sectionKey = "galeria", altText = label) {
+  const params = new URLSearchParams({ filename: file.name, label, section: sectionKey, alt: altText });
   const response = await fetch(`${ADMIN_API_URL}/media-add-upload?${params}`, {
     method: "POST",
     headers: {

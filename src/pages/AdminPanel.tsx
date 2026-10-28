@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  BarChart3, Check, ChevronDown, ExternalLink, FileText, Image, LayoutDashboard,
+  ArrowDown, ArrowUp, BarChart3, Check, ChevronDown, Eye, EyeOff, ExternalLink, FileText, Image, LayoutDashboard, LayoutPanelTop,
   Link2, Loader2, LogOut, MessageCircle, Palette, RefreshCw, Save, Search,
   Plus, Settings, Shield, Trash2, Upload, Users,
 } from "lucide-react";
@@ -11,7 +11,7 @@ import {
 } from "@/lib/adminApi";
 
 type JsonMap = Record<string, unknown>;
-type SectionRow = { id: string; section_key: string; name: string; sort_order: number; is_active: boolean; draft_data: JsonMap };
+type SectionRow = { id: string; page_id: string; section_key: string; name: string; type: string; sort_order: number; is_active: boolean; draft_data: JsonMap; published_data: JsonMap };
 type ContentBlockRow = { id: string; section_id: string | null; block_key: string; type: string; label: string | null; sort_order: number; is_active: boolean; draft_content: JsonMap; style: JsonMap };
 type ButtonRow = { id: string; section_id: string | null; button_key: string; label: string; destination_type: "url" | "anchor" | "whatsapp" | "page" | "email" | "phone"; destination_value: string | null; open_new_tab: boolean; is_active: boolean; sort_order: number };
 type MediaRow = { id: string; bucket: string; path: string; public_url: string | null; media_type: "image" | "video" | "logo" | "favicon" | "og_image" | "file"; label: string | null; alt_text: string | null; caption: string | null; metadata: JsonMap; is_active: boolean };
@@ -28,7 +28,7 @@ type AdminState = { sections: SectionRow[]; blocks: ContentBlockRow[]; buttons: 
 
 const emptyState: AdminState = { sections: [], blocks: [], buttons: [], media: [], forms: [], leads: [], events: [], whatsapp: null, identity: null, tracking: [], seo: null };
 const navigation = [
-  ["resumo", "Resumo", LayoutDashboard], ["textos", "Textos do site", FileText],
+  ["resumo", "Resumo", LayoutDashboard], ["secoes", "Gerenciar seções", LayoutPanelTop], ["textos", "Textos do site", FileText],
   ["botoes", "Botões e links", Link2], ["imagens", "Imagens e vídeos", Image],
   ["formulario", "Formulário", FileText], ["leads", "Leads", Users],
   ["whatsapp", "WhatsApp", MessageCircle], ["aparencia", "Aparência", Palette],
@@ -37,7 +37,13 @@ const navigation = [
 type PageKey = (typeof navigation)[number][0];
 const leadStatuses = ["Novo", "Em contato", "Respondido", "Qualificado", "Convertido", "Arquivado"];
 type TextComposer = { sectionId: string; text: string; imageUrl: string; imageAlt: string; afterBlockKey: string | null };
-type NewMediaForm = { open: boolean; label: string; file: File | null };
+type NewMediaForm = { open: boolean; label: string; altText: string; sectionKey: string; file: File | null };
+type NewSectionForm = { open: boolean; name: string; eyebrow: string; title: string; description: string; imageUrl: string; imageAlt: string; buttonLabel: string; buttonUrl: string; afterSectionId: string };
+
+const originalTheme = {
+  blue: "#1E56A0", orange: "#F7931E", gold: "#A88A55", white: "#FFF8EF",
+  brown: "#8A6A3F", dark: "#0B1F3A", dark2: "#0f2847", sand: "#E8D5B0",
+};
 
 const pairedImageSections = new Set(["hoteis", "galeria", "pacotes"]);
 const inclusionDefaults = [
@@ -82,7 +88,9 @@ function AdminPanel() {
   const [search, setSearch] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
   const [textComposer, setTextComposer] = useState<TextComposer | null>(null);
-  const [newMedia, setNewMedia] = useState<NewMediaForm>({ open: false, label: "", file: null });
+  const [newMedia, setNewMedia] = useState<NewMediaForm>({ open: false, label: "", altText: "", sectionKey: "galeria", file: null });
+  const [newSection, setNewSection] = useState<NewSectionForm>({ open: false, name: "", eyebrow: "", title: "", description: "", imageUrl: "", imageAlt: "", buttonLabel: "", buttonUrl: "", afterSectionId: "" });
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [security, setSecurity] = useState({ recoveryEmail: "", currentPassword: "", newPassword: "", confirmPassword: "" });
 
@@ -121,10 +129,13 @@ function AdminPanel() {
   const mediaBySection = useMemo(() => {
     const groups = new Map<string, MediaRow[]>();
     data.media.filter((item) => Boolean(item.public_url)).forEach((item) => {
-      const section = mediaSection(item.path);
+      const section = mediaSection(item);
       groups.set(section, [...(groups.get(section) ?? []), item]);
     });
-    return [...groups.entries()].map(([section, items]) => ({ section, items }));
+    return [...groups.entries()].map(([section, items]) => ({
+      section,
+      items: items.sort((first, second) => Number(first.metadata?.sort_order ?? 0) - Number(second.metadata?.sort_order ?? 0)),
+    }));
   }, [data.media]);
 
   const filteredLeads = useMemo(() => {
@@ -178,7 +189,8 @@ function AdminPanel() {
           style: { section_key: includedSection.section_key },
         } satisfies ContentBlockRow))
         : [];
-      setData({ sections, blocks: [...blocks.filter((block) => block.style?.removed !== true), ...missingInclusions], buttons, media: media.filter((item) => item.metadata?.removed !== true), forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity: identityRows[0] ?? null, tracking, seo: seoRows[0] ?? null });
+      const identity = identityRows[0] ? { ...identityRows[0], tokens: { ...originalTheme, ...identityRows[0].tokens } } : null;
+      setData({ sections: sections.filter((section) => section.published_data?.removed !== true), blocks: [...blocks.filter((block) => block.style?.removed !== true), ...missingInclusions], buttons, media: media.filter((item) => item.metadata?.removed !== true), forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity, tracking, seo: seoRows[0] ?? null });
       setFeedback("Tudo carregado");
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível carregar o painel."));
@@ -377,15 +389,142 @@ function AdminPanel() {
     setSaving("media-add");
     setFeedback("Enviando nova mídia...");
     try {
-      const created = await uploadNewAdminMedia<MediaRow>(newMedia.file, label, token);
+      const sectionKey = newMedia.file.type.startsWith("video/") ? "videoteca" : newMedia.sectionKey;
+      const created = await uploadNewAdminMedia<MediaRow>(newMedia.file, label, token, sectionKey, newMedia.altText.trim() || label);
       setData((current) => ({ ...current, media: [...current.media, created] }));
-      setNewMedia({ open: false, label: "", file: null });
-      setFeedback(created.media_type === "video" ? "Vídeo adicionado à Videoteca" : "Imagem adicionada à Galeria");
+      setNewMedia({ open: false, label: "", altText: "", sectionKey: "galeria", file: null });
+      setFeedback(created.media_type === "video" ? "Vídeo adicionado à Videoteca" : "Imagem adicionada à seção escolhida");
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível adicionar a mídia."));
     } finally {
       setSaving(null);
     }
+  }
+
+  function updateSection(id: string, patch: Partial<SectionRow>, dataPatch?: JsonMap) {
+    setData((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === id ? {
+        ...section,
+        ...patch,
+        ...(dataPatch ? { draft_data: { ...section.draft_data, ...dataPatch } } : {}),
+      } : section),
+    }));
+  }
+
+  async function saveSection(section: SectionRow) {
+    if (!token) return;
+    await saveAction(`section-manage-${section.id}`, () => adminTable("sections", {
+      method: "PATCH",
+      token,
+      query: `?id=eq.${section.id}`,
+      body: { name: section.name, sort_order: section.sort_order, is_active: true, draft_data: section.draft_data, published_data: section.draft_data },
+    }), "Seção salva e publicada");
+  }
+
+  async function toggleSectionVisibility(section: SectionRow) {
+    if (!token) return;
+    const hidden = section.published_data?.hidden !== true;
+    const next = { ...section.draft_data, hidden };
+    await saveAction(`section-visible-${section.id}`, () => adminTable("sections", {
+      method: "PATCH", token, query: `?id=eq.${section.id}`,
+      body: { is_active: true, draft_data: next, published_data: next },
+    }), hidden ? "Seção ocultada do site" : "Seção exibida no site");
+  }
+
+  async function deleteSection(section: SectionRow) {
+    if (!token || !window.confirm(`Excluir a seção “${section.name}” do site? Esta ação ficará salva.`)) return;
+    const removed = { ...section.draft_data, hidden: true, removed: true, removed_at: new Date().toISOString() };
+    await saveAction(`section-delete-${section.id}`, () => adminTable("sections", {
+      method: "PATCH", token, query: `?id=eq.${section.id}`,
+      body: { is_active: true, draft_data: removed, published_data: removed },
+    }), "Seção excluída do site");
+  }
+
+  async function moveSection(section: SectionRow, direction: -1 | 1) {
+    if (!token) return;
+    const ordered = [...data.sections].sort((first, second) => first.sort_order - second.sort_order);
+    const index = ordered.findIndex((item) => item.id === section.id);
+    const other = ordered[index + direction];
+    if (!other) return;
+    await saveAction(`section-move-${section.id}`, () => Promise.all([
+      adminTable("sections", { method: "PATCH", token, query: `?id=eq.${section.id}`, body: { sort_order: other.sort_order } }),
+      adminTable("sections", { method: "PATCH", token, query: `?id=eq.${other.id}`, body: { sort_order: section.sort_order } }),
+    ]), "Ordem das seções atualizada");
+  }
+
+  async function addSection() {
+    if (!token) return;
+    if (!newSection.name.trim() || !newSection.title.trim()) {
+      setFeedback("Preencha o nome e o título da nova seção.");
+      return;
+    }
+    const pageId = data.sections[0]?.page_id;
+    if (!pageId) {
+      setFeedback("Não foi possível identificar a página principal.");
+      return;
+    }
+    const ordered = [...data.sections].sort((first, second) => first.sort_order - second.sort_order);
+    const afterIndex = Math.max(0, ordered.findIndex((section) => section.id === newSection.afterSectionId));
+    const sortOrder = ordered[afterIndex]?.sort_order + 1 || ordered.length + 1;
+    const toMove = ordered.filter((section) => section.sort_order >= sortOrder);
+    const sectionData = {
+      dynamic: true,
+      template: newSection.imageUrl ? "image-text" : "text",
+      eyebrow: newSection.eyebrow.trim(),
+      title: newSection.title.trim(),
+      description: newSection.description.trim(),
+      image_url: newSection.imageUrl,
+      image_alt: newSection.imageAlt.trim() || newSection.title.trim(),
+      button_label: newSection.buttonLabel.trim(),
+      button_url: newSection.buttonUrl.trim(),
+      hidden: false,
+    };
+    const key = `cms-user-${crypto.randomUUID().replace(/-/g, "")}`;
+    const saved = await saveAction("section-add", async () => {
+      await Promise.all(toMove.map((section) => adminTable("sections", {
+        method: "PATCH", token, query: `?id=eq.${section.id}`, body: { sort_order: section.sort_order + 1 },
+      })));
+      await adminTable("sections", {
+        method: "POST", token,
+        body: { page_id: pageId, section_key: key, name: newSection.name.trim(), type: "cms", sort_order: sortOrder, is_active: true, draft_data: sectionData, published_data: sectionData },
+      });
+    }, "Nova seção adicionada e publicada");
+    if (saved) setNewSection({ open: false, name: "", eyebrow: "", title: "", description: "", imageUrl: "", imageAlt: "", buttonLabel: "", buttonUrl: "", afterSectionId: "" });
+  }
+
+  function updateMedia(id: string, patch: Partial<MediaRow>) {
+    setData((current) => ({ ...current, media: current.media.map((item) => item.id === id ? { ...item, ...patch } : item) }));
+  }
+
+  async function saveMediaDetails(item: MediaRow) {
+    if (!token) return;
+    await saveAction(`media-details-${item.id}`, () => adminTable("media", {
+      method: "PATCH", token, query: `?id=eq.${item.id}`,
+      body: { label: item.label, alt_text: item.alt_text, caption: item.caption, metadata: item.metadata, is_active: true },
+    }), "Detalhes da mídia publicados");
+  }
+
+  async function moveMedia(item: MediaRow, direction: -1 | 1) {
+    if (!token) return;
+    const group = data.media
+      .filter((candidate) => mediaSectionKey(candidate) === mediaSectionKey(item))
+      .sort((first, second) => Number(first.metadata?.sort_order ?? 0) - Number(second.metadata?.sort_order ?? 0));
+    const index = group.findIndex((candidate) => candidate.id === item.id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= group.length) return;
+    [group[index], group[nextIndex]] = [group[nextIndex], group[index]];
+    await saveAction(`media-order-${item.id}`, () => Promise.all(group.map((candidate, order) => adminTable("media", {
+      method: "PATCH", token, query: `?id=eq.${candidate.id}`, body: { metadata: { ...candidate.metadata, sort_order: order } },
+    }))), "Ordem das mídias publicada");
+  }
+
+  async function saveTheme(tokens = data.identity?.tokens) {
+    if (!token || !data.identity || !tokens) return;
+    await saveAction("identity", () => adminTable("visual_identity", {
+      method: "PATCH", token, query: `?id=eq.${data.identity!.id}`,
+      body: { tokens, fonts: data.identity!.fonts, assets: data.identity!.assets },
+    }), "Cores salvas e publicadas");
   }
 
   async function saveSecurity(event: React.FormEvent<HTMLFormElement>) {
@@ -477,6 +616,32 @@ function AdminPanel() {
 
           {active === "resumo" && <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Metric label="Visitas hoje" value={metrics.today} /><Metric label="Total de visitas" value={metrics.views} /><Metric label="Visitantes" value={metrics.visitors} /><Metric label="Sessões" value={metrics.sessions} /><Metric label="Leads" value={metrics.leads} /><Metric label="Cliques no WhatsApp" value={metrics.whatsapp} /></div><Panel title="O que você quer mudar?" subtitle="Acesse direto as áreas mais usadas."><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Shortcut icon={<FileText />} label="Editar textos" onClick={() => setActive("textos")} /><Shortcut icon={<Link2 />} label="Editar botões" onClick={() => setActive("botoes")} /><Shortcut icon={<Image />} label="Trocar imagens" onClick={() => setActive("imagens")} /><Shortcut icon={<MessageCircle />} label="Alterar WhatsApp" onClick={() => setActive("whatsapp")} /></div></Panel></div>}
 
+          {active === "secoes" && <div className="space-y-5">
+            <Panel title="Gerenciar seções" subtitle="Altere a ordem, o conteúdo e a visibilidade. As mudanças são publicadas diretamente no site.">
+              {!newSection.open ? <button type="button" onClick={() => setNewSection((current) => ({ ...current, open: true, afterSectionId: current.afterSectionId || data.sections.at(-2)?.id || data.sections[0]?.id || "" }))} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-5 py-3 font-semibold text-white"><Plus className="h-4 w-4" /> Adicionar nova seção</button> : <div className="space-y-4 rounded-2xl border border-[#d9d3c8] bg-[#fbfaf7] p-4 md:p-5">
+                <div className="grid gap-4 md:grid-cols-2"><Field label="Nome no painel" value={newSection.name} onChange={(name) => setNewSection((current) => ({ ...current, name }))} /><SelectField label="Posição: inserir depois de" value={newSection.afterSectionId} onChange={(afterSectionId) => setNewSection((current) => ({ ...current, afterSectionId }))} options={data.sections.filter((section) => section.section_key !== "cms-contato").map((section) => [section.id, section.name] as const)} /></div>
+                <div className="grid gap-4 md:grid-cols-2"><Field label="Texto pequeno acima do título" value={newSection.eyebrow} onChange={(eyebrow) => setNewSection((current) => ({ ...current, eyebrow }))} /><Field label="Título principal" value={newSection.title} onChange={(title) => setNewSection((current) => ({ ...current, title }))} /></div>
+                <TextAreaField label="Descrição" value={newSection.description} onChange={(description) => setNewSection((current) => ({ ...current, description }))} />
+                <ImageField images={imageLibrary} value={newSection.imageUrl} label="Imagem da seção (opcional)" onChange={(imageUrl) => { const image = imageLibrary.find((item) => item.public_url === imageUrl); setNewSection((current) => ({ ...current, imageUrl, imageAlt: image?.alt_text || current.imageAlt })); }} onUpload={(file) => void uploadContentImage(file, (image) => setNewSection((current) => ({ ...current, imageUrl: image.public_url, imageAlt: image.alt_text })))} busy={saving === "content-image-upload"} />
+                {newSection.imageUrl && <Field label="Descrição da imagem para acessibilidade" value={newSection.imageAlt} onChange={(imageAlt) => setNewSection((current) => ({ ...current, imageAlt }))} />}
+                <div className="grid gap-4 md:grid-cols-2"><Field label="Texto do botão (opcional)" value={newSection.buttonLabel} onChange={(buttonLabel) => setNewSection((current) => ({ ...current, buttonLabel }))} /><Field label="Link do botão" value={newSection.buttonUrl} onChange={(buttonUrl) => setNewSection((current) => ({ ...current, buttonUrl }))} /></div>
+                <div className="flex flex-wrap gap-2"><SaveButton busy={saving === "section-add"} onClick={() => void addSection()} label="Salvar e publicar seção" /><button type="button" onClick={() => setNewSection({ open: false, name: "", eyebrow: "", title: "", description: "", imageUrl: "", imageAlt: "", buttonLabel: "", buttonUrl: "", afterSectionId: "" })} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Cancelar</button></div>
+              </div>}
+            </Panel>
+            {[...data.sections].sort((first, second) => first.sort_order - second.sort_order).map((section, index, ordered) => {
+              const hidden = section.published_data?.hidden === true;
+              const editing = editingSectionId === section.id;
+              const dynamic = section.draft_data?.dynamic === true;
+              return <article key={section.id} className="rounded-2xl border border-[#ded8ce] bg-white p-4 shadow-sm md:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#edf1f3] px-2.5 py-1 text-xs font-semibold">{index + 1}</span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${hidden ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{hidden ? "Oculta" : "Publicada"}</span>{dynamic && <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">Criada no painel</span>}</div><h2 className="text-lg font-semibold">{section.name}</h2><p className="mt-1 line-clamp-2 text-sm text-[#778188]">{dynamic ? String(section.draft_data.title || section.draft_data.description || "Nova seção") : "Seção original do site — textos e imagens continuam com o estilo atual."}</p></div>
+                  <div className="flex flex-wrap gap-2"><button type="button" disabled={index === 0 || saving !== null} onClick={() => void moveSection(section, -1)} className="grid h-10 w-10 place-items-center rounded-lg border border-[#d9d3c8] disabled:opacity-35" title="Mover para cima"><ArrowUp className="h-4 w-4" /></button><button type="button" disabled={index === ordered.length - 1 || saving !== null} onClick={() => void moveSection(section, 1)} className="grid h-10 w-10 place-items-center rounded-lg border border-[#d9d3c8] disabled:opacity-35" title="Mover para baixo"><ArrowDown className="h-4 w-4" /></button><button type="button" onClick={() => setEditingSectionId(editing ? null : section.id)} className="h-10 rounded-lg border border-[#b9cbd5] px-3 text-sm font-semibold text-[#163d5a]">Editar</button><button type="button" onClick={() => { setActive("imagens"); setNewMedia({ open: true, label: "", altText: "", sectionKey: sectionNameFromKey(section.section_key), file: null }); }} className="h-10 rounded-lg border border-[#b9cbd5] px-3 text-sm font-semibold text-[#163d5a]">Adicionar imagem</button><button type="button" disabled={saving === `section-visible-${section.id}`} onClick={() => void toggleSectionVisibility(section)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#d9d3c8] px-3 text-sm font-semibold">{hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}{hidden ? "Exibir" : "Ocultar"}</button><button type="button" disabled={saving === `section-delete-${section.id}`} onClick={() => void deleteSection(section)} className="grid h-10 w-10 place-items-center rounded-lg border border-red-200 text-red-600" title="Excluir seção"><Trash2 className="h-4 w-4" /></button></div>
+                </div>
+                {editing && <div className="mt-5 space-y-4 border-t border-[#eee9e1] pt-5"><Field label="Nome da seção no painel" value={section.name} onChange={(name) => updateSection(section.id, { name })} />{dynamic ? <><div className="grid gap-4 md:grid-cols-2"><Field label="Texto pequeno" value={String(section.draft_data.eyebrow || "")} onChange={(eyebrow) => updateSection(section.id, {}, { eyebrow })} /><Field label="Título principal" value={String(section.draft_data.title || "")} onChange={(title) => updateSection(section.id, {}, { title })} /></div><TextAreaField label="Descrição" value={String(section.draft_data.description || "")} onChange={(description) => updateSection(section.id, {}, { description })} /><div className="grid gap-4 md:grid-cols-2"><Field label="Texto do botão" value={String(section.draft_data.button_label || "")} onChange={(button_label) => updateSection(section.id, {}, { button_label })} /><Field label="Link do botão" value={String(section.draft_data.button_url || "")} onChange={(button_url) => updateSection(section.id, {}, { button_url })} /></div></> : <Help text="Para preservar o design original, edite o conteúdo desta seção nas áreas Textos e Imagens e vídeos." />}<SaveButton busy={saving === `section-manage-${section.id}`} onClick={() => void saveSection(section)} label="Salvar e publicar" /></div>}
+              </article>;
+            })}
+          </div>}
+
           {active === "textos" && <div className="space-y-4">
             <Panel title="Editar textos" subtitle="Abra uma seção e altere o texto. Para criar outro, clique em Novo abaixo no lugar onde ele deve aparecer.">
               <div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-[#879198]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar um texto..." className="h-11 w-full rounded-xl border border-[#d9d3c8] pl-10 pr-3 outline-none focus:border-[#d58b43]" /></div>
@@ -539,16 +704,30 @@ function AdminPanel() {
           {active === "botoes" && <div className="space-y-5"><Help text="Altere o texto e o destino de cada botão. Os botões de WhatsApp usam o número definido na área WhatsApp." />{buttonsBySection.map(({ section, buttons }) => <Panel key={section.id} title={section.name} subtitle={`${buttons.length} botões ou links`}><div className="space-y-4">{buttons.map((button) => <div key={button.id} className="rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Texto que aparece" value={button.label} onChange={(value) => updateButton(button.id, { label: value })} /><SelectField label="Tipo de destino" value={button.destination_type} onChange={(value) => updateButton(button.id, { destination_type: value as ButtonRow["destination_type"] })} options={[["whatsapp", "WhatsApp"], ["anchor", "Seção do site"], ["url", "Outro link"], ["email", "E-mail"], ["phone", "Telefone"], ["page", "Página"]]} /></div>{button.destination_type !== "whatsapp" && <Field label="Link ou destino" value={button.destination_value ?? ""} onChange={(value) => updateButton(button.id, { destination_value: value })} />}<div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Toggle label="Abrir em nova aba" checked={button.open_new_tab} onChange={(checked) => updateButton(button.id, { open_new_tab: checked })} /><SaveButton compact busy={saving === `button-${button.id}`} onClick={() => token && void saveAction(`button-${button.id}`, () => adminTable("buttons", { method: "PATCH", token, query: `?id=eq.${button.id}`, body: { label: button.label, destination_type: button.destination_type, destination_value: button.destination_value, open_new_tab: button.open_new_tab, is_active: button.is_active } }))} label="Salvar botão" /></div></div>)}</div></Panel>)}</div>}
 
           {active === "imagens" && <div className="space-y-5">
-            <Panel title="Adicionar imagem ou vídeo" subtitle="Imagens novas entram na Galeria. Vídeos novos entram na Videoteca.">
-              {!newMedia.open ? <button type="button" onClick={() => setNewMedia({ open: true, label: "", file: null })} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-5 py-3 font-semibold text-white transition hover:bg-[#0e3049]"><Plus className="h-4 w-4" /> Adicionar imagem ou vídeo</button> : <div className="space-y-4 rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4">
-                <Field label="Nome da mídia" value={newMedia.label} onChange={(label) => setNewMedia((current) => ({ ...current, label }))} />
+            <Panel title="Adicionar imagem ou vídeo" subtitle="Escolha a seção, envie o arquivo e publique. Vídeos são direcionados automaticamente à Videoteca.">
+              {!newMedia.open ? <button type="button" onClick={() => setNewMedia({ open: true, label: "", altText: "", sectionKey: "galeria", file: null })} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-5 py-3 font-semibold text-white transition hover:bg-[#0e3049]"><Plus className="h-4 w-4" /> Adicionar imagem ou vídeo</button> : <div className="space-y-4 rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4">
+                <div className="grid gap-4 md:grid-cols-2"><Field label="Nome da mídia" value={newMedia.label} onChange={(label) => setNewMedia((current) => ({ ...current, label }))} /><SelectField label="Onde a imagem deve aparecer" value={newMedia.sectionKey} onChange={(sectionKey) => setNewMedia((current) => ({ ...current, sectionKey }))} options={data.sections.filter((section) => !["cms-header", "cms-contato", "cms-videoteca"].includes(section.section_key)).map((section) => [sectionNameFromKey(section.section_key), section.name] as const)} /></div>
+                <Field label="Texto alternativo (acessibilidade e Google)" value={newMedia.altText} onChange={(altText) => setNewMedia((current) => ({ ...current, altText }))} />
                 <label className="block"><span className="text-sm font-semibold text-[#354b59]">Arquivo</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,video/mp4,video/webm" onChange={(event) => { const file = event.target.files?.[0] ?? null; setNewMedia((current) => ({ ...current, file, label: current.label || file?.name.replace(/\.[^.]+$/, "") || "" })); }} className="mt-2 block w-full rounded-xl border border-[#d9d3c8] bg-white px-3 py-2.5 text-sm" /></label>
-                {newMedia.file && <p className="text-sm text-[#65727a]">{newMedia.file.type.startsWith("video/") ? "Será adicionado à Videoteca" : "Será adicionada à Galeria"} · {(newMedia.file.size / 1024 / 1024).toFixed(1)} MB</p>}
-                <div className="flex flex-wrap gap-2"><button type="button" disabled={!newMedia.file || saving === "media-add"} onClick={() => void addNewMedia()} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving === "media-add" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Fazer upload</button><button type="button" disabled={saving === "media-add"} onClick={() => setNewMedia({ open: false, label: "", file: null })} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Cancelar</button></div>
+                {newMedia.file && <p className="text-sm text-[#65727a]">{newMedia.file.type.startsWith("video/") ? "Será adicionado à Videoteca" : "Será adicionada à seção escolhida"} · {(newMedia.file.size / 1024 / 1024).toFixed(1)} MB</p>}
+                <div className="flex flex-wrap gap-2"><button type="button" disabled={!newMedia.file || saving === "media-add"} onClick={() => void addNewMedia()} className="inline-flex items-center gap-2 rounded-xl bg-[#163d5a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving === "media-add" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Fazer upload</button><button type="button" disabled={saving === "media-add"} onClick={() => setNewMedia({ open: false, label: "", altText: "", sectionKey: "galeria", file: null })} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Cancelar</button></div>
               </div>}
             </Panel>
             <Help text="As mídias estão separadas pelo lugar onde aparecem no site. Trocar mantém a posição; remover tira somente aquela mídia." />
-            {mediaBySection.map(({ section, items }) => <details key={section} className="group rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">{section}</h2><p className="text-sm text-[#778188]">{items.length} {items.length === 1 ? "mídia" : "mídias"}</p></div><ChevronDown className="h-5 w-5 transition group-open:rotate-180" /></summary><div className="grid gap-4 border-t border-[#eee9e1] p-4 sm:grid-cols-2 xl:grid-cols-3">{items.map((item) => { const changing = saving === `media-upload-${item.id}`; const removing = saving === `media-remove-${item.id}`; return <article key={item.id} className="group/card overflow-hidden rounded-2xl border border-[#ded8ce] bg-white shadow-sm"><div className="relative aspect-[4/3] overflow-hidden bg-[#e9e5de]">{item.media_type === "video" ? <video src={item.public_url ?? ""} controls preload="metadata" className="h-full w-full object-cover" /> : <img src={item.public_url ?? ""} alt={item.alt_text || item.label || "Imagem do site"} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover/card:scale-[1.02]" />}{(changing || removing) && <div className="absolute inset-0 grid place-items-center bg-[#102f45]/65 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>}</div><div className="p-3"><p className="mb-3 truncate text-sm font-semibold">{item.label || (item.media_type === "video" ? "Vídeo" : "Imagem")}</p><div className="flex items-center gap-3"><label className={`flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#163d5a] px-4 text-sm font-semibold text-white transition hover:bg-[#0e3049] ${(changing || removing) ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />Trocar<input type="file" className="sr-only" disabled={changing || removing} accept={item.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp,image/gif,image/svg+xml"} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void replaceMedia(item, file); }} /></label><button type="button" disabled={changing || removing} onClick={() => void removeMedia(item)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-red-200 text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${item.label || "mídia"}`} title="Remover"><Trash2 className="h-5 w-5" /></button></div></div></article>; })}</div></details>)}
+            {mediaBySection.map(({ section, items }) => <details key={section} className="group rounded-2xl border border-[#ded8ce] bg-white shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold">{section}</h2><p className="text-sm text-[#778188]">{items.length} {items.length === 1 ? "mídia" : "mídias"}</p></div><ChevronDown className="h-5 w-5 transition group-open:rotate-180" /></summary>
+              <div className="grid gap-4 border-t border-[#eee9e1] p-4 sm:grid-cols-2 xl:grid-cols-3">{items.map((item, itemIndex) => {
+                const changing = saving === `media-upload-${item.id}`;
+                const removing = saving === `media-remove-${item.id}`;
+                return <article key={item.id} className="group/card overflow-hidden rounded-2xl border border-[#ded8ce] bg-white shadow-sm">
+                  <div className="relative aspect-[4/3] overflow-hidden bg-[#e9e5de]">{item.media_type === "video" ? <video src={item.public_url ?? ""} controls preload="metadata" className="h-full w-full object-cover" /> : <img src={item.public_url ?? ""} alt={item.alt_text || item.label || "Imagem do site"} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover/card:scale-[1.02]" />}{(changing || removing) && <div className="absolute inset-0 grid place-items-center bg-[#102f45]/65 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>}</div>
+                  <div className="space-y-3 p-3"><Field label="Nome" value={item.label ?? ""} onChange={(label) => updateMedia(item.id, { label })} />{item.media_type !== "video" && <Field label="Texto alternativo" value={item.alt_text ?? ""} onChange={(alt_text) => updateMedia(item.id, { alt_text })} />}
+                    <div className="flex items-center gap-2"><button type="button" disabled={itemIndex === 0 || saving !== null} onClick={() => void moveMedia(item, -1)} className="grid h-10 w-10 place-items-center rounded-lg border border-[#d9d3c8] disabled:opacity-35" title="Mover para cima"><ArrowUp className="h-4 w-4" /></button><button type="button" disabled={itemIndex === items.length - 1 || saving !== null} onClick={() => void moveMedia(item, 1)} className="grid h-10 w-10 place-items-center rounded-lg border border-[#d9d3c8] disabled:opacity-35" title="Mover para baixo"><ArrowDown className="h-4 w-4" /></button><button type="button" disabled={saving === `media-details-${item.id}`} onClick={() => void saveMediaDetails(item)} className="h-10 flex-1 rounded-lg border border-[#b9cbd5] px-3 text-sm font-semibold text-[#163d5a]">Salvar detalhes</button></div>
+                    <div className="flex items-center gap-3"><label className={`flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#163d5a] px-4 text-sm font-semibold text-white transition hover:bg-[#0e3049] ${(changing || removing) ? "pointer-events-none opacity-60" : ""}`}><Upload className="h-4 w-4" />Trocar<input type="file" className="sr-only" disabled={changing || removing} accept={item.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp,image/gif,image/svg+xml"} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void replaceMedia(item, file); }} /></label><button type="button" disabled={changing || removing} onClick={() => void removeMedia(item)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-red-200 text-red-600 transition hover:bg-red-50 disabled:opacity-50" aria-label={`Remover ${item.label || "mídia"}`} title="Remover"><Trash2 className="h-5 w-5" /></button></div>
+                  </div>
+                </article>;
+              })}</div>
+            </details>)}
             {!mediaBySection.length && <Empty text="Nenhuma imagem ou vídeo cadastrado." />}
           </div>}
 
@@ -558,7 +737,7 @@ function AdminPanel() {
 
           {active === "whatsapp" && (data.whatsapp ? <Panel title="WhatsApp do site" subtitle="Esse número será usado em todos os botões de WhatsApp."><div className="grid gap-4 md:grid-cols-[120px_140px_1fr]"><Field label="País" value={data.whatsapp.country_code} onChange={(value) => setData((current) => ({ ...current, whatsapp: current.whatsapp ? { ...current.whatsapp, country_code: value } : null }))} /><Field label="DDD" value={data.whatsapp.ddd ?? ""} onChange={(value) => setData((current) => ({ ...current, whatsapp: current.whatsapp ? { ...current.whatsapp, ddd: value } : null }))} /><Field label="Número" value={data.whatsapp.phone ?? ""} onChange={(value) => setData((current) => ({ ...current, whatsapp: current.whatsapp ? { ...current.whatsapp, phone: value } : null }))} /></div><TextAreaField label="Mensagem automática" value={data.whatsapp.initial_message ?? ""} onChange={(value) => setData((current) => ({ ...current, whatsapp: current.whatsapp ? { ...current.whatsapp, initial_message: value } : null }))} /><Toggle label="Mostrar botão flutuante" checked={data.whatsapp.floating_enabled} onChange={(checked) => setData((current) => ({ ...current, whatsapp: current.whatsapp ? { ...current.whatsapp, floating_enabled: checked } : null }))} /><SaveButton busy={saving === "whatsapp"} onClick={() => token && data.whatsapp && void saveAction("whatsapp", () => adminTable("whatsapp_settings", { method: "PATCH", token, query: `?id=eq.${data.whatsapp!.id}`, body: { country_code: data.whatsapp!.country_code, ddd: data.whatsapp!.ddd, phone: data.whatsapp!.phone, initial_message: data.whatsapp!.initial_message, floating_enabled: data.whatsapp!.floating_enabled } }))} label="Salvar WhatsApp" /></Panel> : <Empty text="As configurações de WhatsApp não foram encontradas." />)}
 
-          {active === "aparencia" && <Panel title="Aparência do site" subtitle="Cores, fontes e elementos visuais cadastrados.">{data.identity && (Object.keys(data.identity.tokens).length || Object.keys(data.identity.fonts).length) ? <><ObjectFields title="Cores" value={data.identity.tokens} onChange={(tokens) => setData((current) => ({ ...current, identity: current.identity ? { ...current.identity, tokens } : null }))} /><ObjectFields title="Fontes" value={data.identity.fonts} onChange={(fonts) => setData((current) => ({ ...current, identity: current.identity ? { ...current.identity, fonts } : null }))} /><SaveButton busy={saving === "identity"} onClick={() => token && data.identity && void saveAction("identity", () => adminTable("visual_identity", { method: "PATCH", token, query: `?id=eq.${data.identity!.id}`, body: { tokens: data.identity!.tokens, fonts: data.identity!.fonts, assets: data.identity!.assets } }))} label="Salvar aparência" /></> : <Help text="A identidade atual está definida diretamente no design do site. As imagens podem ser alteradas na área Imagens e vídeos." />}</Panel>}
+          {active === "aparencia" && <Panel title="Cores do site" subtitle="Altere a paleta com segurança. O site usa exatamente os valores publicados aqui.">{data.identity ? <><ThemeFields value={data.identity.tokens} onChange={(tokens) => setData((current) => ({ ...current, identity: current.identity ? { ...current.identity, tokens } : null }))} /><div className="flex flex-wrap gap-2"><SaveButton busy={saving === "identity"} onClick={() => void saveTheme()} label="Salvar e publicar cores" /><button type="button" disabled={saving === "identity"} onClick={() => { setData((current) => ({ ...current, identity: current.identity ? { ...current.identity, tokens: originalTheme } : null })); void saveTheme(originalTheme); }} className="rounded-xl border border-[#d9d3c8] bg-white px-4 py-2.5 text-sm font-semibold">Restaurar cores originais</button></div></> : <Empty text="As configurações de aparência não foram encontradas." />}</Panel>}
 
           {active === "seo" && <div className="space-y-5">{data.seo && <Panel title="Como o site aparece no Google" subtitle="Textos de busca e compartilhamento."><Field label="Título do site" value={data.seo.seo_title ?? ""} onChange={(value) => setData((current) => ({ ...current, seo: current.seo ? { ...current.seo, seo_title: value } : null }))} /><TextAreaField label="Descrição do site" value={data.seo.meta_description ?? ""} onChange={(value) => setData((current) => ({ ...current, seo: current.seo ? { ...current.seo, meta_description: value } : null }))} /><Field label="Endereço oficial" value={data.seo.canonical_url ?? ""} onChange={(value) => setData((current) => ({ ...current, seo: current.seo ? { ...current.seo, canonical_url: value } : null }))} /><Toggle label="Permitir aparecer no Google" checked={data.seo.indexable} onChange={(checked) => setData((current) => ({ ...current, seo: current.seo ? { ...current.seo, indexable: checked } : null }))} /><SaveButton busy={saving === "seo"} onClick={() => token && data.seo && void saveAction("seo", () => adminTable("seo_settings", { method: "PATCH", token, query: `?id=eq.${data.seo!.id}`, body: data.seo }))} label="Salvar SEO" /></Panel>}<Panel title="Pixels e métricas" subtitle="Ative apenas o serviço que você usa."><div className="space-y-4">{data.tracking.map((item) => <div key={item.id} className="rounded-xl border border-[#e4ded4] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong>{item.name || item.provider}</strong><p className="text-sm text-[#778188]">{item.provider}</p></div><Toggle label="Ativo" checked={item.is_active} onChange={(checked) => updateTracking(item.id, { is_active: checked })} /></div><ObjectFields value={item.public_config} onChange={(public_config) => updateTracking(item.id, { public_config })} /><div className="mt-3"><SaveButton compact busy={saving === `tracking-${item.id}`} onClick={() => token && void saveAction(`tracking-${item.id}`, () => adminTable("tracking_integrations", { method: "PATCH", token, query: `?id=eq.${item.id}`, body: { name: item.name, provider: item.provider, public_config: item.public_config, is_active: item.is_active } }))} label="Salvar integração" /></div></div>)}</div></Panel></div>}
 
@@ -637,6 +816,17 @@ function ObjectFields({ title, value, onChange }: { title?: string; value: JsonM
   if (!entries.length) return null;
   return <div className="space-y-3">{title && <h3 className="font-semibold">{title}</h3>}<div className="grid gap-4 md:grid-cols-2">{entries.map(([key, item]) => typeof item === "boolean" ? <Toggle key={key} label={friendlyLabel(key)} checked={item} onChange={(checked) => onChange({ ...value, [key]: checked })} /> : <Field key={key} label={friendlyLabel(key)} value={String(item ?? "")} onChange={(next) => onChange({ ...value, [key]: next })} />)}</div></div>;
 }
+function ThemeFields({ value, onChange }: { value: JsonMap; onChange: (value: JsonMap) => void }) {
+  const labels: Record<string, string> = {
+    blue: "Cor principal (azul)", orange: "Cor de destaque e botões", gold: "Detalhes dourados",
+    white: "Fundo principal", brown: "Detalhes marrons", dark: "Títulos e textos escuros",
+    dark2: "Fundos escuros secundários", sand: "Fundo areia",
+  };
+  return <div className="grid gap-4 md:grid-cols-2">{Object.keys(originalTheme).map((key) => {
+    const color = String(value[key] || originalTheme[key as keyof typeof originalTheme]);
+    return <label key={key} className="rounded-xl border border-[#e4ded4] bg-[#fbfaf7] p-4"><span className="text-sm font-semibold text-[#354b59]">{labels[key]}</span><div className="mt-3 flex gap-3"><input type="color" value={/^#[0-9a-f]{6}$/i.test(color) ? color : originalTheme[key as keyof typeof originalTheme]} onChange={(event) => onChange({ ...value, [key]: event.target.value.toUpperCase() })} className="h-11 w-14 cursor-pointer rounded-lg border border-[#d9d3c8] bg-white p-1" /><input value={color} onChange={(event) => onChange({ ...value, [key]: event.target.value })} aria-label={`${labels[key]} em HEX`} className="h-11 min-w-0 flex-1 rounded-xl border border-[#d9d3c8] bg-white px-3 font-mono text-sm uppercase outline-none focus:border-[#d58b43]" /></div></label>;
+  })}</div>;
+}
 function friendlyLabel(key: string) { const labels: Record<string, string> = { pixel_id: "ID do pixel", project_id: "ID do projeto", measurement_id: "ID de medição", container_id: "ID do contêiner" }; return labels[key] || key.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase()); }
 function textFieldLabel(section: SectionRow, block: ContentBlockRow, index: number) {
   if (block.style?.dynamic === true) return block.label || `Novo texto ${index + 1}`;
@@ -653,14 +843,20 @@ function textFieldLabel(section: SectionRow, block: ContentBlockRow, index: numb
   }
   return block.label || `Texto ${index + 1}`;
 }
-function mediaSection(path: string) {
+function mediaSectionKey(item: MediaRow) {
+  const fromMetadata = String(item.metadata?.section_key || "").replace(/^cms-/, "");
+  if (fromMetadata) return fromMetadata;
+  return item.path.match(/^cms-media-(.+?)-(?:\d+|user-)/)?.[1] || "outras";
+}
+function mediaSection(item: MediaRow) {
+  const key = mediaSectionKey(item);
   const sections: Array<[string, string]> = [
-    ["cms-media-header", "Cabeçalho"], ["cms-media-autoridade", "Apresentação da agência"],
-    ["cms-media-pacotes", "Pacotes"], ["cms-media-galeria", "Galeria"],
-    ["cms-media-videoteca", "Vídeos"], ["cms-media-hoteis", "Hospedagens"],
-    ["cms-media-sobre", "Sobre nós"], ["cms-media-contato", "Rodapé"], ["cms-media-banner", "Banners"],
+    ["header", "Cabeçalho"], ["autoridade", "Apresentação da agência"],
+    ["pacotes", "Pacotes"], ["galeria", "Galeria"], ["videoteca", "Vídeos"],
+    ["hoteis", "Hospedagens"], ["sobre", "Sobre nós"], ["contato", "Rodapé"],
+    ["banner", "Banners"],
   ];
-  return sections.find(([prefix]) => path.startsWith(prefix))?.[1] ?? "Outras mídias";
+  return sections.find(([prefix]) => key.startsWith(prefix))?.[1] ?? friendlyLabel(key.replace(/^user-/, ""));
 }
 function leadWhatsapp(value: string) { const digits = value.replace(/\D/g, ""); return `https://wa.me/${digits.startsWith("55") ? digits : `55${digits}`}`; }
 function messageFrom(error: unknown, fallback: string) {
