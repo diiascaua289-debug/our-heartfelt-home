@@ -76,6 +76,7 @@ describe("CMS text runtime", () => {
 
     window.fetch = vi.fn(async (request: RequestInfo | URL) => {
       const url = String(request);
+      if (url.includes("/seo_settings?")) return { ok: false, status: 503, json: async () => ({}) } as Response;
       const data = url.includes("/sections?") ? [
         { section_key: "cms-user-test", name: "Experiência especial", sort_order: 18, is_active: true, published_data: { dynamic: true, eyebrow: "Descubra", title: "Uma nova experiência", description: "Conteúdo criado no painel", button_label: "Saiba mais", button_url: "#contato" } },
       ] : url.includes("/content_blocks?") ? blocks : url.includes("/media?") ? [
@@ -114,5 +115,6 @@ describe("CMS text runtime", () => {
     expect(document.documentElement.style.getPropertyValue("--orange")).toBe("#CC5500");
     expect(document.querySelector("[data-cms-section='user-test']")).toHaveTextContent("Uma nova experiência");
     expect(document.querySelector("[data-cms-media='cms-media-user-about']")).toHaveAttribute("src", "/sobre-extra.jpg");
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining("/cms-data/sections?"), expect.objectContaining({ cache: "no-store" }));
   });
 });

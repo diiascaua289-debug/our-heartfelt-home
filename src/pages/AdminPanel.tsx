@@ -521,10 +521,30 @@ function AdminPanel() {
 
   async function saveTheme(tokens = data.identity?.tokens) {
     if (!token || !data.identity || !tokens) return;
-    await saveAction("identity", () => adminTable("visual_identity", {
-      method: "PATCH", token, query: `?id=eq.${data.identity!.id}`,
-      body: { tokens, fonts: data.identity!.fonts, assets: data.identity!.assets },
-    }), "Cores salvas e publicadas");
+    const normalized = Object.fromEntries(Object.entries(tokens).map(([key, value]) => [key, String(value).trim().toUpperCase()]));
+    const invalid = Object.entries(normalized).find(([, value]) => !/^#[0-9A-F]{6}$/.test(value));
+    if (invalid) {
+      setFeedback(`A cor “${friendlyLabel(invalid[0])}” precisa estar no formato #RRGGBB.`);
+      return;
+    }
+    setSaving("identity");
+    setFeedback("Publicando cores...");
+    try {
+      const rows = await adminTable<VisualIdentity[]>("visual_identity", {
+        method: "PATCH", token, query: `?id=eq.${data.identity.id}`,
+        body: { tokens: normalized, fonts: data.identity.fonts, assets: data.identity.assets },
+      });
+      const published = rows[0];
+      if (!published || Object.entries(normalized).some(([key, value]) => published.tokens?.[key] !== value)) {
+        throw new Error("O banco não confirmou a publicação das cores.");
+      }
+      setData((current) => ({ ...current, identity: { ...published, tokens: { ...originalTheme, ...published.tokens } } }));
+      setFeedback("Cores salvas e publicadas no site");
+    } catch (error) {
+      setFeedback(messageFrom(error, "Não foi possível publicar as cores."));
+    } finally {
+      setSaving(null);
+    }
   }
 
   async function saveSecurity(event: React.FormEvent<HTMLFormElement>) {
