@@ -51,6 +51,28 @@ const inclusionDefaults = [
   { key: "cms-text-incluso-021", text: "Reservas de cruzeiros", order: 14 },
   { key: "cms-text-incluso-022", text: "Passagens aéreas", order: 15 },
 ];
+const packageTextDefaults = [
+  { key: "cms-text-pacotes-001", text: "Nossos Roteiros", label: "Texto pequeno acima do título", order: 1, type: "text" },
+  { key: "cms-text-pacotes-002", text: "Pacotes de Viagem para o Marrocos", label: "Título da seção", order: 2, type: "text" },
+  { key: "cms-text-pacotes-003", text: "Mais Vendido", label: "Selo do pacote 1", order: 3, type: "text" },
+  { key: "cms-text-pacotes-004", text: "Marrocos Completo — 15 Dias", label: "Nome e duração do pacote 1", order: 4, type: "text" },
+  { key: "cms-text-pacotes-005", text: "De Casablanca ao deserto, passando pelas cidades imperiais, Chefchaouen, Merzouga, Ouarzazate, Essaouira e Marrakech. A experiência mais completa do Marrocos.", label: "Descrição do pacote 1", order: 5, type: "textarea" },
+  { key: "cms-text-pacotes-006", text: "Receptivo no aeroporto", label: "Item 1 do pacote 1", order: 6, type: "text" },
+  { key: "cms-text-pacotes-007", text: "Meia pensão", label: "Item 2 do pacote 1", order: 7, type: "text" },
+  { key: "cms-text-pacotes-008", text: "Passeio de camelo", label: "Item 3 do pacote 1", order: 8, type: "text" },
+  { key: "cms-text-pacotes-009", text: "Acampamento luxo", label: "Item 4 do pacote 1", order: 9, type: "text" },
+  { key: "cms-text-pacotes-010", text: "Guia em português", label: "Item 5 do pacote 1", order: 10, type: "text" },
+  { key: "cms-text-pacotes-011", text: "Transporte incluso", label: "Item 6 do pacote 1", order: 11, type: "text" },
+  { key: "cms-text-pacotes-012", text: "Cidades Imperiais", label: "Selo do pacote 2", order: 12, type: "text" },
+  { key: "cms-text-pacotes-013", text: "Marrocos Imperial — 10 Dias", label: "Nome e duração do pacote 2", order: 13, type: "text" },
+  { key: "cms-text-pacotes-014", text: "Casablanca, Rabat, Fez, deserto de Merzouga, Ouarzazate e Marrakech. O roteiro perfeito para quem quer cultura profunda e aventura no deserto do Saara.", label: "Descrição do pacote 2", order: 14, type: "textarea" },
+  { key: "cms-text-pacotes-015", text: "Cidades imperiais", label: "Item 1 do pacote 2", order: 15, type: "text" },
+  { key: "cms-text-pacotes-016", text: "Nascer sol no deserto", label: "Item 2 do pacote 2", order: 16, type: "text" },
+  { key: "cms-text-pacotes-017", text: "Noite nas dunas", label: "Item 3 do pacote 2", order: 17, type: "text" },
+  { key: "cms-text-pacotes-018", text: "Medina de Fez", label: "Item 4 do pacote 2", order: 18, type: "text" },
+  { key: "cms-text-pacotes-019", text: "Guia local", label: "Item 5 do pacote 2", order: 19, type: "text" },
+  { key: "cms-text-pacotes-020", text: "Hotéis selecionados", label: "Item 6 do pacote 2", order: 20, type: "text" },
+] as const;
 
 function sectionNameFromKey(sectionKey: string) {
   return sectionKey.replace(/^cms-/, "");
@@ -189,8 +211,22 @@ function AdminPanel() {
           style: { section_key: includedSection.section_key },
         } satisfies ContentBlockRow))
         : [];
+      const packagesSection = sections.find((section) => sectionNameFromKey(section.section_key) === "pacotes");
+      const missingPackageTexts = packagesSection
+        ? packageTextDefaults.filter((item) => !blocks.some((block) => block.block_key === item.key)).map((item) => ({
+          id: `pending:${item.key}`,
+          section_id: packagesSection.id,
+          block_key: item.key,
+          type: item.type,
+          label: item.label,
+          sort_order: item.order,
+          is_active: true,
+          draft_content: { text: item.text },
+          style: { section_key: packagesSection.section_key },
+        } satisfies ContentBlockRow))
+        : [];
       const identity = identityRows[0] ? { ...identityRows[0], tokens: { ...originalTheme, ...identityRows[0].tokens } } : null;
-      setData({ sections: sections.filter((section) => section.published_data?.removed !== true), blocks: [...blocks.filter((block) => block.style?.removed !== true), ...missingInclusions], buttons, media: media.filter((item) => item.metadata?.removed !== true), forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity, tracking, seo: seoRows[0] ?? null });
+      setData({ sections: sections.filter((section) => section.published_data?.removed !== true), blocks: [...blocks.filter((block) => block.style?.removed !== true), ...missingInclusions, ...missingPackageTexts], buttons, media: media.filter((item) => item.metadata?.removed !== true), forms, leads, events, whatsapp: whatsappRows[0] ?? null, identity, tracking, seo: seoRows[0] ?? null });
       setFeedback("Tudo carregado");
     } catch (error) {
       setFeedback(messageFrom(error, "Não foi possível carregar o painel."));
@@ -245,6 +281,19 @@ function AdminPanel() {
           : adminTable("content_blocks", { method: "PATCH", token, query: `?id=eq.${block.id}`, body: { label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content, style: block.style } })),
       ]);
     });
+  }
+
+  async function savePackageSection(section: SectionRow, blocks: ContentBlockRow[], buttons: ButtonRow[]) {
+    if (!token) return;
+    await saveAction(`packages-${section.id}`, async () => {
+      await Promise.all([
+        adminTable("sections", { method: "PATCH", token, query: `?id=eq.${section.id}`, body: { name: section.name, sort_order: section.sort_order, is_active: section.is_active, draft_data: section.draft_data, published_data: section.draft_data } }),
+        ...blocks.map((block) => block.id.startsWith("pending:")
+          ? adminTable("content_blocks", { method: "POST", token, body: { section_id: block.section_id, block_key: block.block_key, type: block.type, label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content, style: block.style } })
+          : adminTable("content_blocks", { method: "PATCH", token, query: `?id=eq.${block.id}`, body: { label: block.label, sort_order: block.sort_order, is_active: block.is_active, draft_content: block.draft_content, published_content: block.draft_content, style: block.style } })),
+        ...buttons.map((button) => adminTable("buttons", { method: "PATCH", token, query: `?id=eq.${button.id}`, body: { label: button.label, destination_type: button.destination_type, destination_value: button.destination_value, open_new_tab: button.open_new_tab, is_active: button.is_active } })),
+      ]);
+    }, "Pacotes salvos e publicados no site");
   }
 
   function startAddingText(section: SectionRow, afterBlock: ContentBlockRow | null) {
@@ -616,6 +665,13 @@ function AdminPanel() {
 
   const activeLabel = navigation.find(([key]) => key === active)?.[1];
   const imageLibrary = data.media.filter((item) => item.media_type === "image" && Boolean(item.public_url));
+  const packagesSection = data.sections.find((section) => section.section_key === "cms-pacotes") ?? null;
+  const packageBlocks = packagesSection
+    ? data.blocks.filter((block) => block.section_id === packagesSection.id && block.block_key.startsWith("cms-text-pacotes-")).sort((first, second) => first.sort_order - second.sort_order)
+    : [];
+  const packageButtons = packagesSection
+    ? data.buttons.filter((button) => button.section_id === packagesSection.id && button.button_key.startsWith("cms-link-pacotes-")).sort((first, second) => first.sort_order - second.sort_order)
+    : [];
   return (
     <main className="min-h-screen bg-[#f5f3ef] text-[#162d3d]">
       <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
@@ -666,7 +722,17 @@ function AdminPanel() {
             <Panel title="Editar textos" subtitle="Abra uma seção e altere o texto. Para criar outro, clique em Novo abaixo no lugar onde ele deve aparecer.">
               <div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-[#879198]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar um texto..." className="h-11 w-full rounded-xl border border-[#d9d3c8] pl-10 pr-3 outline-none focus:border-[#d58b43]" /></div>
             </Panel>
-            {blocksBySection.map(({ section, blocks }, index) => {
+            {packagesSection && <PackageTextEditor
+              section={packagesSection}
+              blocks={packageBlocks}
+              buttons={packageButtons}
+              busy={saving === `packages-${packagesSection.id}`}
+              onBlockChange={updateBlock}
+              onButtonChange={updateButton}
+              onSave={() => void savePackageSection(packagesSection, packageBlocks, packageButtons)}
+              onOpenImages={() => setActive("imagens")}
+            />}
+            {blocksBySection.filter(({ section }) => section.section_key !== "cms-pacotes").map(({ section, blocks }, index) => {
               const composer = textComposer?.sectionId === section.id ? textComposer : null;
               const composing = Boolean(composer);
               const allSectionBlocks = data.blocks.filter((block) => block.section_id === section.id);
@@ -771,6 +837,58 @@ function AdminPanel() {
 
 function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return <section className="rounded-2xl border border-[#ded8ce] bg-white p-5 shadow-sm md:p-6"><div className="mb-5"><h2 className="text-xl font-semibold">{title}</h2>{subtitle && <p className="mt-1 text-sm text-[#778188]">{subtitle}</p>}</div><div className="space-y-4">{children}</div></section>;
+}
+function PackageTextEditor({ section, blocks, buttons, busy, onBlockChange, onButtonChange, onSave, onOpenImages }: {
+  section: SectionRow;
+  blocks: ContentBlockRow[];
+  buttons: ButtonRow[];
+  busy: boolean;
+  onBlockChange: (id: string, text: string) => void;
+  onButtonChange: (id: string, patch: Partial<ButtonRow>) => void;
+  onSave: () => void;
+  onOpenImages: () => void;
+}) {
+  const blockAt = (position: number) => blocks.find((block) => block.block_key === `cms-text-pacotes-${String(position).padStart(3, "0")}`);
+  const buttonAt = (position: number) => buttons.find((button) => button.button_key === `cms-link-pacotes-${String(position).padStart(2, "0")}`);
+  const textField = (position: number, label: string, multiline = false) => {
+    const block = blockAt(position);
+    if (!block) return <Empty key={position} text={`${label} ainda não está disponível.`} />;
+    const value = String(block.draft_content.text ?? "");
+    return multiline
+      ? <TextAreaField key={block.id} label={label} value={value} onChange={(text) => onBlockChange(block.id, text)} />
+      : <Field key={block.id} label={label} value={value} onChange={(text) => onBlockChange(block.id, text)} />;
+  };
+  const packages = [
+    { number: 1, start: 3, title: "Pacote 1 — Marrocos Completo", button: buttonAt(1) },
+    { number: 2, start: 12, title: "Pacote 2 — Marrocos Imperial", button: buttonAt(2) },
+  ];
+
+  return <details open className="group rounded-2xl border-2 border-[#c8d8e1] bg-white shadow-sm">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 md:p-6">
+      <div><div className="mb-2 inline-flex rounded-full bg-[#e8f2f7] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#163d5a]">Editor completo</div><h2 className="text-xl font-semibold">{section.name}</h2><p className="mt-1 text-sm text-[#778188]">Título da seção, descrições, itens e botões dos dois pacotes</p></div>
+      <ChevronDown className="h-5 w-5 shrink-0 transition group-open:rotate-180" />
+    </summary>
+    <div className="space-y-5 border-t border-[#e5edf1] p-4 md:p-6">
+      <Help text="Edite tudo aqui e clique uma vez em Salvar e publicar pacotes. Cada campo corresponde exatamente ao texto exibido nos cartões do site." />
+      <div className="grid gap-4 rounded-2xl border border-[#e4ded4] bg-[#fbfaf7] p-4 md:grid-cols-2">
+        {textField(1, "Texto pequeno acima do título")}
+        {textField(2, "Título da seção")}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        {packages.map((item) => <article key={item.number} className="overflow-hidden rounded-2xl border border-[#d9d3c8] bg-white">
+          <div className="bg-[#163d5a] px-5 py-4 text-white"><p className="text-xs font-semibold uppercase tracking-[.16em] text-white/65">Cartão {item.number}</p><h3 className="mt-1 text-lg font-semibold">{item.title}</h3></div>
+          <div className="space-y-4 p-4 md:p-5">
+            {textField(item.start, "Selo acima da imagem")}
+            {textField(item.start + 1, "Nome e duração")}
+            {textField(item.start + 2, "Descrição", true)}
+            <div><p className="mb-3 text-sm font-semibold text-[#354b59]">Itens incluídos exibidos no cartão</p><div className="grid gap-3 sm:grid-cols-2">{Array.from({ length: 6 }, (_, index) => textField(item.start + 3 + index, `Item ${index + 1}`))}</div></div>
+            {item.button ? <Field label="Texto do botão" value={item.button.label} onChange={(label) => onButtonChange(item.button!.id, { label })} /> : <Empty text="O botão deste pacote ainda não está disponível." />}
+          </div>
+        </article>)}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 border-t border-[#eee9e1] pt-5"><SaveButton busy={busy} onClick={onSave} label="Salvar e publicar pacotes" /><button type="button" onClick={onOpenImages} className="inline-flex items-center gap-2 rounded-xl border border-[#b9cbd5] bg-white px-4 py-3 text-sm font-semibold text-[#163d5a] transition hover:bg-[#edf5f9]"><Image className="h-4 w-4" /> Trocar imagens dos pacotes</button></div>
+    </div>
+  </details>;
 }
 function Field({ label, value, onChange, type = "text", autoFocus = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; autoFocus?: boolean }) {
   return <label className="block"><span className="text-sm font-semibold text-[#354b59]">{label}</span><input autoFocus={autoFocus} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#d9d3c8] bg-white px-3 outline-none transition focus:border-[#d58b43] focus:ring-2 focus:ring-[#d58b43]/15" /></label>;
