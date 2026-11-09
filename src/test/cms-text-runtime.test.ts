@@ -78,7 +78,8 @@ describe("CMS text runtime", () => {
       const url = String(request);
       if (url.includes("/seo_settings?")) return { ok: false, status: 503, json: async () => ({}) } as Response;
       const data = url.includes("/sections?") ? [
-        { section_key: "cms-user-test", name: "Experiência especial", sort_order: 18, is_active: true, published_data: { dynamic: true, eyebrow: "Descubra", title: "Uma nova experiência", description: "Conteúdo criado no painel", button_label: "Saiba mais", button_url: "#contato" } },
+        { section_key: "cms-user-test", name: "Experiência especial", sort_order: 18, is_active: true, published_data: { dynamic: true, eyebrow: "Descubra", title: "Uma nova experiência", description: "Conteúdo criado no painel", image_url: "/secao.jpg", image_alt: "Imagem sem moldura", image_frame: false, button_label: "Saiba mais", button_url: "#contato" } },
+        { section_key: "cms-user-framed", name: "Experiência com moldura", sort_order: 19, is_active: true, published_data: { dynamic: true, title: "Com moldura", image_url: "/moldura.jpg", image_frame: true } },
       ] : url.includes("/content_blocks?") ? blocks : url.includes("/media?") ? [
         { path: "cms-media-user-image", public_url: "/nova.jpg", label: "Nova foto", alt_text: "Nova foto", media_type: "image", metadata: { dynamic: true, section_key: "galeria" }, is_active: true },
         { path: "cms-media-user-video", public_url: "/novo.mp4", label: "Novo vídeo", alt_text: "Novo vídeo", media_type: "video", metadata: { dynamic: true, section_key: "videoteca", content_type: "video/mp4" }, is_active: true },
@@ -114,6 +115,8 @@ describe("CMS text runtime", () => {
     expect(addedVideo.closest(".video-slide")?.parentElement).toHaveAttribute("id", "videoCarousel");
     expect(document.documentElement.style.getPropertyValue("--orange")).toBe("#CC5500");
     expect(document.querySelector("[data-cms-section='user-test']")).toHaveTextContent("Uma nova experiência");
+    expect(document.querySelector("[data-cms-section='user-test']")).not.toHaveClass("has-image-frame");
+    expect(document.querySelector("[data-cms-section='user-framed']")).toHaveClass("has-image-frame");
     expect(document.querySelector("[data-cms-media='cms-media-user-about']")).toHaveAttribute("src", "/sobre-extra.jpg");
     expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining("/cms-data/sections?"), expect.objectContaining({ cache: "no-store" }));
   });

@@ -28,7 +28,8 @@
 .cms-dynamic-eyebrow { color: var(--orange); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
 .cms-dynamic-title { margin-top: 10px; max-width: 760px; font-family: 'Cormorant Garamond', serif; font-size: clamp(42px, 5vw, 68px); font-weight: 600; line-height: 1; }
 .cms-dynamic-description { margin-top: 20px; max-width: 720px; font-size: 17px; line-height: 1.8; color: color-mix(in srgb, var(--dark) 76%, transparent); white-space: pre-line; }
-.cms-dynamic-image { width: 100%; min-height: 360px; max-height: 540px; object-fit: cover; border-radius: 4px; box-shadow: 22px 22px 0 color-mix(in srgb, var(--gold) 24%, transparent); }
+.cms-dynamic-image { width: 100%; min-height: 360px; max-height: 540px; object-fit: cover; border-radius: 4px; }
+.cms-dynamic-section.has-image-frame .cms-dynamic-image { box-shadow: 22px 22px 0 color-mix(in srgb, var(--gold) 24%, transparent); }
 .cms-dynamic-button { display: inline-flex; margin-top: 28px; min-height: 48px; align-items: center; justify-content: center; padding: 0 26px; background: var(--orange); color: var(--dark); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; transition: transform .2s ease, filter .2s ease; }
 .cms-dynamic-button:hover { transform: translateY(-2px); filter: brightness(1.04); }
 .cms-extra-media-grid { width: min(1160px, calc(100% - 80px)); margin: 42px auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
@@ -38,7 +39,8 @@
 @media (max-width: 760px) {
   .cms-dynamic-section { padding: 78px 20px; }
   .cms-dynamic-section.has-image .cms-dynamic-inner { grid-template-columns: 1fr; }
-  .cms-dynamic-image { min-height: 280px; box-shadow: 12px 12px 0 color-mix(in srgb, var(--gold) 24%, transparent); }
+  .cms-dynamic-image { min-height: 280px; }
+  .cms-dynamic-section.has-image-frame .cms-dynamic-image { box-shadow: 12px 12px 0 color-mix(in srgb, var(--gold) 24%, transparent); }
   .cms-extra-media-grid { width: calc(100% - 40px); grid-template-columns: 1fr; }
 }
 
@@ -2467,7 +2469,7 @@ window.addEventListener('load', () => {
     const element = document.createElement('section');
     element.dataset.cmsSection = sectionName;
     element.id = sectionName;
-    element.className = `cms-dynamic-section${content.image_url ? ' has-image' : ''}`;
+    element.className = `cms-dynamic-section${content.image_url ? ' has-image' : ''}${content.image_frame === true ? ' has-image-frame' : ''}`;
     const inner = document.createElement('div');
     inner.className = 'cms-dynamic-inner';
     const copy = document.createElement('div');
